@@ -2,6 +2,7 @@
 import requests
 from shapely.geometry import shape, Point
 from datetime import datetime
+from zoneinfo import ZoneInfo  # Requires Python 3.9+
 
 # ----- CONFIG -----
 
@@ -127,10 +128,12 @@ def print_day_outlook(day, urls):
 
 # ----- MAIN -----
 def main():
-    # Print current date/time in mm/dd/yyyy HH:mm 24hr format
-    now = datetime.now()
-    timestamp = now.strftime("%m/%d/%Y %H:%M")
-    print(f"SPC Outlook Generated: {timestamp}\n")
+    # Current UTC time
+    now_utc = datetime.utcnow().replace(tzinfo=ZoneInfo("UTC"))
+    # Convert to Eastern Time
+    now_est = now_utc.astimezone(ZoneInfo("America/New_York"))
+    timestamp = now_est.strftime("%m/%d/%Y %H:%M")
+    print(f"SPC Outlook Generated (ET): {timestamp}\n")
 
     for day in ["Day 1", "Day 2", "Day 3"]:
         print_day_outlook(day, URLS[day])
