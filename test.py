@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import requests
 from shapely.geometry import shape, Point
+from datetime import datetime
 
 # ----- CONFIG -----
 
@@ -126,6 +127,11 @@ def print_day_outlook(day, urls):
 
 # ----- MAIN -----
 def main():
+    # Print current date/time in mm/dd/yyyy HH:mm 24hr format
+    now = datetime.now()
+    timestamp = now.strftime("%m/%d/%Y %H:%M")
+    print(f"SPC Outlook Generated: {timestamp}\n")
+
     for day in ["Day 1", "Day 2", "Day 3"]:
         print_day_outlook(day, URLS[day])
 
