@@ -18,7 +18,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install requests pandas pillow gspread google-auth
+          pip install requests pandas shapely
 
       - name: Run Python Script
         run: python test.py
