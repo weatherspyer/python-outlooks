@@ -1,7 +1,9 @@
-name: Test Python Script
+name: Run SPC Script
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "0 */4 * * *"
 
 jobs:
   run-script:
@@ -25,8 +27,7 @@ jobs:
             ${{ runner.os }}-pip-
 
       - name: Install dependencies
-        run: |
-          pip install requests pandas shapely
+        run: pip install -r requirements.txt
 
-      - name: Run Python Script
+      - name: Run SPC Script
         run: python test.py
