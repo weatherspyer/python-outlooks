@@ -207,7 +207,7 @@ def main():
         d3["category"], d3["Any"]
     ]
 
-    sheet.append_row(row)
+    sheet.insert_row(row, index=2)
 
     print("Row added to Google Sheets")
 
