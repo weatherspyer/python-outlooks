@@ -29,8 +29,8 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run SPC Script
-        run: python test.py
-
       - name: Create credentials.json
         run: echo '${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}' > credentials.json
+
+      - name: Run SPC Script
+        run: python test.py
