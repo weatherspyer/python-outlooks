@@ -30,7 +30,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Create credentials.json
-        run: echo '${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}' > credentials.json
+        run: echo "${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}" | base64 --decode > credentials.json
 
       - name: Run SPC Script
         run: python test.py
