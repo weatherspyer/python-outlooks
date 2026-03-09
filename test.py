@@ -204,7 +204,7 @@ def main():
         timestamp,
         d1["category"], d1["Tornado"], d1["Hail"], d1["Wind"],
         d2["category"], d2["Tornado"], d2["Hail"], d2["Wind"],
-        d3["category"], d3["Any"]
+        d3["category"], d3["Any"], LAT, LON
     ]
 
     sheet.insert_row(row, index=2)
