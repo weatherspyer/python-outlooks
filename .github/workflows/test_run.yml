@@ -31,3 +31,6 @@ jobs:
 
       - name: Run SPC Script
         run: python test.py
+
+      - name: Create credentials.json
+        run: echo '${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}' > credentials.json
