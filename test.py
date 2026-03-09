@@ -8,8 +8,8 @@ from google.oauth2.service_account import Credentials
 
 # ----- CONFIG -----
 
-LAT = 28.787299839629824
-LON = -98.56092194574036
+LAT = 35.37794647403697
+LON = -77.0686649771159
 #LAT = 40.55025767645438    #home
 #LON = -79.980155567313  #home
 #LAT = 40.20650530322366
