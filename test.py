@@ -8,13 +8,8 @@ from google.oauth2.service_account import Credentials
 
 # ----- CONFIG -----
 
-#LAT = 35.37794647403697
-#LON = -77.0686649771159
-LAT = 40.55025767645438    #home
-LON = -79.980155567313  #home
-#LAT = 40.20650530322366
-#LON = -94.15823157167513
-# GLENSHAW 40.55025767645438, -79.980155567313
+LAT = 40.55025767645438
+LON = -79.980155567313
 
 SHEET_ID = "1awHnPKObHtsnsWS2zLSB3vBBMIeODZeu1Ncx7hUsOg8"
 SHEET_NAME = "SPC"
@@ -84,7 +79,31 @@ def get_spc_geojson(url):
     response.raise_for_status()
     return response.json()
 
+def convert_issue_time(issue_string):
+
+    if not issue_string:
+        return ""
+
+    dt = datetime.strptime(issue_string, "%Y%m%d%H%M")
+    dt = dt.replace(tzinfo=ZoneInfo("UTC"))
+
+    dt_est = dt.astimezone(ZoneInfo("America/New_York"))
+
+    return dt_est.strftime("%m/%d/%Y %H:%M")
+
+def get_issue_time(geojson):
+
+    for feature in geojson.get("features", []):
+        props = feature.get("properties", {})
+        issue = props.get("ISSUE")
+
+        if issue:
+            return convert_issue_time(issue)
+
+    return ""
+
 def check_risk_at_location(lat, lon, geojson):
+
     point = Point(lon, lat)
 
     highest_dn = 0
@@ -92,6 +111,7 @@ def check_risk_at_location(lat, lon, geojson):
     highest_label2 = None
 
     for feature in geojson.get("features", []):
+
         geom = feature.get("geometry")
 
         if geom is None or geom.get("type") == "GeometryCollection":
@@ -112,6 +132,7 @@ def check_risk_at_location(lat, lon, geojson):
     return highest_label, highest_label2
 
 def format_label(label):
+
     if label is None or label == "":
         return "None"
 
@@ -121,6 +142,7 @@ def format_label(label):
         return str(label)
 
 def format_sig(sig):
+
     if sig in CIG_MAP:
         return CIG_MAP[sig]
 
@@ -128,14 +150,19 @@ def format_sig(sig):
 
 def get_day_outlook(day, urls):
 
+    cat_geo = get_spc_geojson(urls["Category"])
+
+    issue_time = get_issue_time(cat_geo)
+
     cat_label, _ = check_risk_at_location(
         LAT, LON,
-        get_spc_geojson(urls["Category"])
+        cat_geo
     )
 
     cat_display = CATEGORY_MAP.get(cat_label, cat_label) if cat_label else "None"
 
     results = {
+        "issue": issue_time,
         "category": cat_display
     }
 
@@ -202,9 +229,10 @@ def main():
 
     row = [
         timestamp,
-        d1["category"], d1["Tornado"], d1["Hail"], d1["Wind"],
-        d2["category"], d2["Tornado"], d2["Hail"], d2["Wind"],
-        d3["category"], d3["Any"], LAT, LON
+        d1["issue"], d1["category"], d1["Tornado"], d1["Hail"], d1["Wind"],
+        d2["issue"], d2["category"], d2["Tornado"], d2["Hail"], d2["Wind"],
+        d3["issue"], d3["category"], d3["Any"],
+        LAT, LON
     ]
 
     sheet.insert_row(row, index=2)
