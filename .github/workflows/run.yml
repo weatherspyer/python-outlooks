@@ -3,7 +3,7 @@ name: Run SPC Script
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 * * * *"
+    - cron: "59 * * * *"
 
 jobs:
   run-script:
