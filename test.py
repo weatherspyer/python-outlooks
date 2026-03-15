@@ -8,8 +8,10 @@ from google.oauth2.service_account import Credentials
 
 # ----- CONFIG -----
 
-LAT = 40.55025767645438
-LON = -79.980155567313
+#LAT = 40.55025767645438
+#LON = -79.980155567313
+LAT = 38.81
+LON = -77.64
 
 SHEET_ID = "1awHnPKObHtsnsWS2zLSB3vBBMIeODZeu1Ncx7hUsOg8"
 SHEET_NAME = "SPC"
