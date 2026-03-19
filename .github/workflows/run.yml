@@ -30,5 +30,20 @@ jobs:
       - name: Create credentials.json
         run: echo "${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}" | base64 --decode > credentials.json
 
-      - name: Run SPC Script
-        run: python test.py
+      - name: Run SPC Script (with retry)
+        run: |
+          success=0
+          for i in 1 2 3; do
+            echo "Attempt $i..."
+            if python test.py; then
+              success=1
+              break
+            fi
+            echo "Attempt $i failed. Retrying in 20 seconds..."
+            sleep 20
+          done
+
+          if [ $success -ne 1 ]; then
+            echo "All attempts failed."
+            exit 1
+          fi
