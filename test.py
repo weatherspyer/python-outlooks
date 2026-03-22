@@ -11,17 +11,16 @@ import sys
 
 #LAT = 40.55025767645438
 #LON = -79.980155567313
-# Default values (fallback if nothing passed)
-LAT = 40.55025767645438
-LON = -79.980155567313
 
-# Override with command-line arguments (from GitHub Actions)
-if len(sys.argv) >= 3:
-    try:
-        LAT = float(sys.argv[1])
-        LON = float(sys.argv[2])
-    except Exception as e:
-        print(f"Invalid lat/lon input, using defaults: {e}")
+# Require lat/lon from command-line args
+if len(sys.argv) < 3:
+    raise ValueError("LAT and LON must be provided as arguments")
+
+try:
+    LAT = float(sys.argv[1])
+    LON = float(sys.argv[2])
+except Exception as e:
+    raise ValueError(f"Invalid LAT/LON values: {e}")
 
 SHEET_ID = "1awHnPKObHtsnsWS2zLSB3vBBMIeODZeu1Ncx7hUsOg8"
 SHEET_NAME = "SPC"
