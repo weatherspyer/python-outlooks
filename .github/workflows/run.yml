@@ -2,6 +2,13 @@ name: Run SPC Script
 
 on:
   workflow_dispatch:
+    inputs:
+      lat:
+        description: "Latitude"
+        required: true
+      lon:
+        description: "Longitude"
+        required: true
 
 jobs:
   run-script:
@@ -35,7 +42,7 @@ jobs:
           success=0
           for i in 1 2 3; do
             echo "Attempt $i..."
-            if python test.py; then
+            if python test.py "${{ github.event.inputs.lat }}" "${{ github.event.inputs.lon }}"; then
               success=1
               break
             fi
