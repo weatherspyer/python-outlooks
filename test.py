@@ -5,13 +5,23 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 import gspread
 from google.oauth2.service_account import Credentials
+impoort sys
 
 # ----- CONFIG -----
 
 #LAT = 40.55025767645438
 #LON = -79.980155567313
-LAT = 38.81
-LON = -77.64
+# Default values (fallback if nothing passed)
+LAT = 40.55025767645438
+LON = -79.980155567313
+
+# Override with command-line arguments (from GitHub Actions)
+if len(sys.argv) >= 3:
+    try:
+        LAT = float(sys.argv[1])
+        LON = float(sys.argv[2])
+    except Exception as e:
+        print(f"Invalid lat/lon input, using defaults: {e}")
 
 SHEET_ID = "1awHnPKObHtsnsWS2zLSB3vBBMIeODZeu1Ncx7hUsOg8"
 SHEET_NAME = "SPC"
@@ -217,7 +227,7 @@ def get_day_outlook(day, urls):
 # ----- MAIN -----
 
 def main():
-
+    print(f"Running SPC for LAT={LAT}, LON={LON}")
     sheet = get_sheet()
 
     now_utc = datetime.utcnow().replace(tzinfo=ZoneInfo("UTC"))
