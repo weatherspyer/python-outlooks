@@ -32,6 +32,6 @@ jobs:
 
       - name: Run SPC Radius Script
         run: |
-          python -u spc_radius.py 43.155002967427635 -93.21048480762727 70
+          python -u spc_radius.py 40.55136608005622 -79.9809184631601 70
 
           
