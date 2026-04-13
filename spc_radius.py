@@ -1,0 +1,241 @@
+#!/usr/bin/env python3
+import requests
+from shapely.geometry import shape, Point
+from datetime import datetime
+from zoneinfo import ZoneInfo
+import gspread
+from google.oauth2.service_account import Credentials
+import sys
+
+# ----- CONFIG -----
+
+if len(sys.argv) < 4:
+    raise ValueError("LAT, LON, and RADIUS (miles) must be provided as arguments")
+
+try:
+    LAT = float(sys.argv[1])
+    LON = float(sys.argv[2])
+    RADIUS_MILES = float(sys.argv[3])
+except Exception as e:
+    raise ValueError(f"Invalid LAT/LON/RADIUS values: {e}")
+
+SHEET_ID = "1awHnPKObHtsnsWS2zLSB3vBBMIeODZeu1Ncx7hUsOg8"
+SHEET_NAME = "SPC"
+
+URLS = {
+    "Day 1": {
+        "Category": "https://www.spc.noaa.gov/products/outlook/day1otlk_cat.nolyr.geojson",
+        "Tornado": "https://www.spc.noaa.gov/products/outlook/day1otlk_torn.nolyr.geojson",
+        "Tornado Sig": "https://www.spc.noaa.gov/products/outlook/day1otlk_cigtorn.nolyr.geojson",
+        "Hail": "https://www.spc.noaa.gov/products/outlook/day1otlk_hail.nolyr.geojson",
+        "Hail Sig": "https://www.spc.noaa.gov/products/outlook/day1otlk_cighail.nolyr.geojson",
+        "Wind": "https://www.spc.noaa.gov/products/outlook/day1otlk_wind.nolyr.geojson",
+        "Wind Sig": "https://www.spc.noaa.gov/products/outlook/day1otlk_cigwind.nolyr.geojson"
+    },
+    "Day 2": {
+        "Category": "https://www.spc.noaa.gov/products/outlook/day2otlk_cat.nolyr.geojson",
+        "Tornado": "https://www.spc.noaa.gov/products/outlook/day2otlk_torn.nolyr.geojson",
+        "Tornado Sig": "https://www.spc.noaa.gov/products/outlook/day2otlk_cigtorn.nolyr.geojson",
+        "Hail": "https://www.spc.noaa.gov/products/outlook/day2otlk_hail.nolyr.geojson",
+        "Hail Sig": "https://www.spc.noaa.gov/products/outlook/day2otlk_cighail.nolyr.geojson",
+        "Wind": "https://www.spc.noaa.gov/products/outlook/day2otlk_wind.nolyr.geojson",
+        "Wind Sig": "https://www.spc.noaa.gov/products/outlook/day2otlk_cigwind.nolyr.geojson"
+    },
+    "Day 3": {
+        "Category": "https://www.spc.noaa.gov/products/outlook/day3otlk_cat.nolyr.geojson",
+        "Any": "https://www.spc.noaa.gov/products/outlook/day3otlk_prob.nolyr.geojson",
+        "Any Sig": "https://www.spc.noaa.gov/products/outlook/day3otlk_cigprob.nolyr.geojson"
+    }
+}
+
+CATEGORY_MAP = {
+    "MRGL": "Marginal",
+    "SLGT": "Slight",
+    "ENH": "Enhanced",
+    "MDT": "Moderate",
+    "HIGH": "High",
+    "TSTM": "None"
+}
+
+CIG_MAP = {
+    "CIG1": "1",
+    "CIG2": "2",
+    "CIG3": "3"
+}
+
+# ----- GOOGLE SHEETS -----
+
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+
+def get_sheet():
+    creds = Credentials.from_service_account_file(
+        "credentials.json",
+        scopes=SCOPES
+    )
+
+    gc = gspread.authorize(creds)
+    spreadsheet = gc.open_by_key(SHEET_ID)
+    return spreadsheet.worksheet(SHEET_NAME)
+
+# ----- FUNCTIONS -----
+
+def get_spc_geojson(url):
+    response = requests.get(url)
+    response.raise_for_status()
+    return response.json()
+
+def convert_issue_time(issue_string):
+    if not issue_string:
+        return ""
+
+    dt = datetime.strptime(issue_string, "%Y%m%d%H%M")
+    dt = dt.replace(tzinfo=ZoneInfo("UTC"))
+    dt_est = dt.astimezone(ZoneInfo("America/New_York"))
+
+    return dt_est.strftime("%m/%d/%Y %H:%M")
+
+def get_issue_time(geojson):
+    for feature in geojson.get("features", []):
+        props = feature.get("properties", {})
+        issue = props.get("ISSUE")
+        if issue:
+            return convert_issue_time(issue)
+    return ""
+
+# ----- RADIUS VERSION -----
+
+def check_risk_in_radius(lat, lon, geojson, radius_miles):
+
+    point = Point(lon, lat)
+
+    radius_deg = radius_miles / 69.0
+    area = point.buffer(radius_deg)
+
+    highest_dn = 0
+    highest_label = None
+    highest_label2 = None
+
+    for feature in geojson.get("features", []):
+
+        geom = feature.get("geometry")
+        if geom is None or geom.get("type") == "GeometryCollection":
+            continue
+
+        polygon = shape(geom)
+
+        props = feature.get("properties", {})
+        dn = props.get("DN", 0)
+        label = props.get("LABEL")
+        label2 = props.get("LABEL2")
+
+        if polygon.intersects(area) and dn > highest_dn:
+            highest_dn = dn
+            highest_label = label
+            highest_label2 = label2
+
+    return highest_label, highest_label2
+
+def format_label(label):
+    if label is None or label == "":
+        return "None"
+    try:
+        return f"{float(label)*100:.0f}%"
+    except:
+        return str(label)
+
+def format_sig(sig):
+    return CIG_MAP.get(sig, "")
+
+# ----- OUTLOOK -----
+
+def get_day_outlook(day, urls):
+
+    cat_geo = get_spc_geojson(urls["Category"])
+    issue_time = get_issue_time(cat_geo)
+
+    cat_label, _ = check_risk_in_radius(LAT, LON, cat_geo, RADIUS_MILES)
+    cat_display = CATEGORY_MAP.get(cat_label, cat_label) if cat_label else "None"
+
+    results = {
+        "issue": issue_time,
+        "category": cat_display
+    }
+
+    if day != "Day 3":
+
+        hazards = ["Tornado", "Hail", "Wind"]
+
+        for hazard in hazards:
+
+            label, _ = check_risk_in_radius(
+                LAT, LON,
+                get_spc_geojson(urls[hazard]),
+                RADIUS_MILES
+            )
+
+            sig_raw, _ = check_risk_in_radius(
+                LAT, LON,
+                get_spc_geojson(urls[hazard + " Sig"]),
+                RADIUS_MILES
+            )
+
+            display_label = format_label(label)
+            sig_display = format_sig(sig_raw)
+
+            if sig_display:
+                results[hazard] = f"{display_label} (Sig {sig_display})"
+            else:
+                results[hazard] = display_label
+
+    else:
+
+        label, _ = check_risk_in_radius(
+            LAT, LON,
+            get_spc_geojson(urls["Any"]),
+            RADIUS_MILES
+        )
+
+        sig_raw, _ = check_risk_in_radius(
+            LAT, LON,
+            get_spc_geojson(urls["Any Sig"]),
+            RADIUS_MILES
+        )
+
+        display_label = format_label(label)
+        sig_display = format_sig(sig_raw)
+
+        if sig_display:
+            results["Any"] = f"{display_label} (Sig {sig_display})"
+        else:
+            results["Any"] = display_label
+
+    return results
+
+# ----- MAIN -----
+
+def main():
+    print(f"Running SPC for LAT={LAT}, LON={LON}, RADIUS={RADIUS_MILES} miles")
+
+    sheet = get_sheet()
+
+    now_utc = datetime.utcnow().replace(tzinfo=ZoneInfo("UTC"))
+    now_est = now_utc.astimezone(ZoneInfo("America/New_York"))
+    timestamp = now_est.strftime("%m/%d/%Y %H:%M")
+
+    d1 = get_day_outlook("Day 1", URLS["Day 1"])
+    d2 = get_day_outlook("Day 2", URLS["Day 2"])
+    d3 = get_day_outlook("Day 3", URLS["Day 3"])
+
+    row = [
+        timestamp,
+        d1["issue"], d1["category"], d1["Tornado"], d1["Hail"], d1["Wind"],
+        d2["issue"], d2["category"], d2["Tornado"], d2["Hail"], d2["Wind"],
+        d3["issue"], d3["category"], d3["Any"],
+        LAT, LON, RADIUS_MILES
+    ]
+
+    sheet.insert_row(row, index=2)
+    print("Row added to Google Sheets")
+
+if __name__ == "__main__":
+    main()
