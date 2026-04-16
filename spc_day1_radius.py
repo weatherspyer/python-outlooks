@@ -142,13 +142,13 @@ def main():
 
     # ----- WRITE TO SHEET -----
 
-    sheet.update("F2", category)
-    sheet.update("F3", tornado)
-    sheet.update("F4", f"Sig {tornado_sig}" if tornado_sig else "")
-    sheet.update("F5", wind_val)
-    sheet.update("F6", f"Sig {wind_sig_val}" if wind_sig_val else "")
-    sheet.update("F7", hail_val)
-    sheet.update("F8", f"Sig {hail_sig_val}" if hail_sig_val else "")
+    sheet.update_acell("F2", category)
+    sheet.update_acell("F3", tornado)
+    sheet.update_acell("F4", f"Sig {tornado_sig}" if tornado_sig else "")
+    sheet.update_acell("F5", wind_val)
+    sheet.update_acell("F6", f"Sig {wind_sig_val}" if wind_sig_val else "")
+    sheet.update_acell("F7", hail_val)
+    sheet.update_acell("F8", f"Sig {hail_sig_val}" if hail_sig_val else "")
 
     print("Day 1 SPC data updated successfully")
 
