@@ -64,7 +64,7 @@ def get_geojson(url):
 
 # ----- CORE LOGIC -----
 
-def check_point_in_category(lat, lon, geojson):
+def check_point(lat, lon, geojson):
     point = Point(lon, lat)
 
     best_dn = 0
@@ -87,7 +87,7 @@ def check_point_in_category(lat, lon, geojson):
 
     return best_label
 
-def check_radius_in_category(lat, lon, geojson, radius_miles):
+def check_radius(lat, lon, geojson, radius_miles):
     point = Point(lon, lat)
     radius_deg = radius_miles / 69.0
     area = point.buffer(radius_deg)
@@ -130,6 +130,8 @@ def main():
 
     sheet = get_sheet()
 
+    used_point = False
+
     cat = get_geojson(URLS["Category"])
     torn = get_geojson(URLS["Tornado"])
     torn_sig = get_geojson(URLS["Tornado Sig"])
@@ -139,40 +141,78 @@ def main():
     hail_sig = get_geojson(URLS["Hail Sig"])
 
     # ----- CATEGORY -----
-    point_cat = check_point_in_category(LAT, LON, cat)
+    point_cat = check_point(LAT, LON, cat)
+
     if point_cat:
         cat_raw = point_cat
+        used_point = True
     else:
-        cat_raw = check_radius_in_category(LAT, LON, cat, RADIUS_MILES)
+        cat_raw = check_radius(LAT, LON, cat, RADIUS_MILES)
 
     category = CATEGORY_MAP.get(cat_raw, "None")
 
     # ----- TORNADO -----
-    point_torn = check_point_in_category(LAT, LON, torn)
-    tornado_raw = point_torn if point_torn else check_radius_in_category(LAT, LON, torn, RADIUS_MILES)
+    point_torn = check_point(LAT, LON, torn)
+
+    if point_torn:
+        tornado_raw = point_torn
+        used_point = True
+    else:
+        tornado_raw = check_radius(LAT, LON, torn, RADIUS_MILES)
+
     tornado = format_label(tornado_raw)
 
-    point_torn_sig = check_point_in_category(LAT, LON, torn_sig)
-    tornado_sig = point_torn_sig if point_torn_sig else check_radius_in_category(LAT, LON, torn_sig, RADIUS_MILES)
-    tornado_sig = format_sig(tornado_sig)
+    point_torn_sig = check_point(LAT, LON, torn_sig)
+
+    if point_torn_sig:
+        tornado_sig_raw = point_torn_sig
+        used_point = True
+    else:
+        tornado_sig_raw = check_radius(LAT, LON, torn_sig, RADIUS_MILES)
+
+    tornado_sig = format_sig(tornado_sig_raw)
 
     # ----- WIND -----
-    point_wind = check_point_in_category(LAT, LON, wind)
-    wind_raw = point_wind if point_wind else check_radius_in_category(LAT, LON, wind, RADIUS_MILES)
+    point_wind = check_point(LAT, LON, wind)
+
+    if point_wind:
+        wind_raw = point_wind
+        used_point = True
+    else:
+        wind_raw = check_radius(LAT, LON, wind, RADIUS_MILES)
+
     wind_val = format_label(wind_raw)
 
-    point_wind_sig = check_point_in_category(LAT, LON, wind_sig)
-    wind_sig_val = point_wind_sig if point_wind_sig else check_radius_in_category(LAT, LON, wind_sig, RADIUS_MILES)
-    wind_sig_val = format_sig(wind_sig_val)
+    point_wind_sig = check_point(LAT, LON, wind_sig)
+
+    if point_wind_sig:
+        wind_sig_raw = point_wind_sig
+        used_point = True
+    else:
+        wind_sig_raw = check_radius(LAT, LON, wind_sig, RADIUS_MILES)
+
+    wind_sig_val = format_sig(wind_sig_raw)
 
     # ----- HAIL -----
-    point_hail = check_point_in_category(LAT, LON, hail)
-    hail_raw = point_hail if point_hail else check_radius_in_category(LAT, LON, hail, RADIUS_MILES)
+    point_hail = check_point(LAT, LON, hail)
+
+    if point_hail:
+        hail_raw = point_hail
+        used_point = True
+    else:
+        hail_raw = check_radius(LAT, LON, hail, RADIUS_MILES)
+
     hail_val = format_label(hail_raw)
 
-    point_hail_sig = check_point_in_category(LAT, LON, hail_sig)
-    hail_sig_val = point_hail_sig if point_hail_sig else check_radius_in_category(LAT, LON, hail_sig, RADIUS_MILES)
-    hail_sig_val = format_sig(hail_sig_val)
+    point_hail_sig = check_point(LAT, LON, hail_sig)
+
+    if point_hail_sig:
+        hail_sig_raw = point_hail_sig
+        used_point = True
+    else:
+        hail_sig_raw = check_radius(LAT, LON, hail_sig, RADIUS_MILES)
+
+    hail_sig_val = format_sig(hail_sig_raw)
 
     # ----- WRITE TO SHEET -----
     sheet.update_acell("F2", category)
@@ -182,6 +222,9 @@ def main():
     sheet.update_acell("F6", f"Sig {wind_sig_val}" if wind_sig_val else "")
     sheet.update_acell("F7", hail_val)
     sheet.update_acell("F8", f"Sig {hail_sig_val}" if hail_sig_val else "")
+
+    source_mode = "Point" if used_point else "Radius"
+    sheet.update_acell("F9", source_mode)
 
     print("Day 1 SPC update complete")
 
