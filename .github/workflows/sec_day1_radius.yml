@@ -1,0 +1,62 @@
+name: Run SPC Day 1 Radius Script
+
+on:
+  workflow_dispatch:
+    inputs:
+      lat:
+        description: "Latitude"
+        required: true
+      lon:
+        description: "Longitude"
+        required: true
+      radius:
+        description: "Radius (miles)"
+        required: true
+
+jobs:
+  run-script:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Create credentials.json
+        run: echo "${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}" | base64 --decode > credentials.json
+
+      - name: Run SPC Radius Script (with retry)
+        run: |
+          success=0
+          for i in 1 2 3; do
+            echo "Attempt $i..."
+            if python -u spc_day1_radius.py \
+              "${{ github.event.inputs.lat }}" \
+              "${{ github.event.inputs.lon }}" \
+              "${{ github.event.inputs.radius }}"; then
+              success=1
+              break
+            fi
+            echo "Attempt $i failed. Retrying in 20 seconds..."
+            sleep 20
+          done
+
+          if [ $success -ne 1 ]; then
+            echo "All attempts failed."
+            exit 1
+          fi
