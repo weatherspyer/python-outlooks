@@ -112,6 +112,15 @@ def check_radius(lat, lon, geojson, radius_miles):
 
     return best_label
 
+# ----- VALIDATION FIX -----
+
+def is_valid_label(label):
+    if not label:
+        return False
+    if label in ["None", "TSTM", ""]:
+        return False
+    return True
+
 def format_label(label):
     if not label:
         return "None"
@@ -143,7 +152,7 @@ def main():
     # ----- CATEGORY -----
     point_cat = check_point(LAT, LON, cat)
 
-    if point_cat:
+    if is_valid_label(point_cat):
         cat_raw = point_cat
         used_point = True
     else:
@@ -154,7 +163,7 @@ def main():
     # ----- TORNADO -----
     point_torn = check_point(LAT, LON, torn)
 
-    if point_torn:
+    if is_valid_label(point_torn):
         tornado_raw = point_torn
         used_point = True
     else:
@@ -164,7 +173,7 @@ def main():
 
     point_torn_sig = check_point(LAT, LON, torn_sig)
 
-    if point_torn_sig:
+    if is_valid_label(point_torn_sig):
         tornado_sig_raw = point_torn_sig
         used_point = True
     else:
@@ -175,7 +184,7 @@ def main():
     # ----- WIND -----
     point_wind = check_point(LAT, LON, wind)
 
-    if point_wind:
+    if is_valid_label(point_wind):
         wind_raw = point_wind
         used_point = True
     else:
@@ -185,7 +194,7 @@ def main():
 
     point_wind_sig = check_point(LAT, LON, wind_sig)
 
-    if point_wind_sig:
+    if is_valid_label(point_wind_sig):
         wind_sig_raw = point_wind_sig
         used_point = True
     else:
@@ -196,7 +205,7 @@ def main():
     # ----- HAIL -----
     point_hail = check_point(LAT, LON, hail)
 
-    if point_hail:
+    if is_valid_label(point_hail):
         hail_raw = point_hail
         used_point = True
     else:
@@ -206,7 +215,7 @@ def main():
 
     point_hail_sig = check_point(LAT, LON, hail_sig)
 
-    if point_hail_sig:
+    if is_valid_label(point_hail_sig):
         hail_sig_raw = point_hail_sig
         used_point = True
     else:
