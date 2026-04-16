@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 import requests
 from shapely.geometry import shape, Point
-from datetime import datetime
-from zoneinfo import ZoneInfo
 import gspread
 from google.oauth2.service_account import Credentials
 import sys
@@ -44,7 +42,7 @@ CIG_MAP = {
     "CIG3": "3"
 }
 
-# ----- GOOGLE SHEETS -----
+# ----- SHEETS -----
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
@@ -57,20 +55,20 @@ def get_sheet():
     spreadsheet = gc.open_by_key(SHEET_ID)
     return spreadsheet.worksheet(SHEET_NAME)
 
-# ----- FUNCTIONS -----
+# ----- DATA -----
 
-def get_spc_geojson(url):
+def get_geojson(url):
     r = requests.get(url)
     r.raise_for_status()
     return r.json()
 
-def check_risk_in_radius(lat, lon, geojson, radius_miles):
-    point = Point(lon, lat)
-    radius_deg = radius_miles / 69.0
-    area = point.buffer(radius_deg)
+# ----- CORE LOGIC -----
 
-    highest_dn = 0
-    highest_label = None
+def check_point_in_category(lat, lon, geojson):
+    point = Point(lon, lat)
+
+    best_dn = 0
+    best_label = None
 
     for feature in geojson.get("features", []):
         geom = feature.get("geometry")
@@ -79,14 +77,40 @@ def check_risk_in_radius(lat, lon, geojson, radius_miles):
 
         polygon = shape(geom)
         props = feature.get("properties", {})
+
         dn = props.get("DN", 0)
         label = props.get("LABEL")
 
-        if polygon.intersects(area) and dn > highest_dn:
-            highest_dn = dn
-            highest_label = label
+        if polygon.contains(point) and dn > best_dn:
+            best_dn = dn
+            best_label = label
 
-    return highest_label
+    return best_label
+
+def check_radius_in_category(lat, lon, geojson, radius_miles):
+    point = Point(lon, lat)
+    radius_deg = radius_miles / 69.0
+    area = point.buffer(radius_deg)
+
+    best_dn = 0
+    best_label = None
+
+    for feature in geojson.get("features", []):
+        geom = feature.get("geometry")
+        if not geom or geom.get("type") == "GeometryCollection":
+            continue
+
+        polygon = shape(geom)
+        props = feature.get("properties", {})
+
+        dn = props.get("DN", 0)
+        label = props.get("LABEL")
+
+        if polygon.intersects(area) and dn > best_dn:
+            best_dn = dn
+            best_label = label
+
+    return best_label
 
 def format_label(label):
     if not label:
@@ -106,42 +130,51 @@ def main():
 
     sheet = get_sheet()
 
-    cat = get_spc_geojson(URLS["Category"])
-    torn = get_spc_geojson(URLS["Tornado"])
-    torn_sig = get_spc_geojson(URLS["Tornado Sig"])
-    wind = get_spc_geojson(URLS["Wind"])
-    wind_sig = get_spc_geojson(URLS["Wind Sig"])
-    hail = get_spc_geojson(URLS["Hail"])
-    hail_sig = get_spc_geojson(URLS["Hail Sig"])
+    cat = get_geojson(URLS["Category"])
+    torn = get_geojson(URLS["Tornado"])
+    torn_sig = get_geojson(URLS["Tornado Sig"])
+    wind = get_geojson(URLS["Wind"])
+    wind_sig = get_geojson(URLS["Wind Sig"])
+    hail = get_geojson(URLS["Hail"])
+    hail_sig = get_geojson(URLS["Hail Sig"])
 
-    category = CATEGORY_MAP.get(
-        check_risk_in_radius(LAT, LON, cat, RADIUS_MILES),
-        "None"
-    )
+    # ----- CATEGORY -----
+    point_cat = check_point_in_category(LAT, LON, cat)
+    if point_cat:
+        cat_raw = point_cat
+    else:
+        cat_raw = check_radius_in_category(LAT, LON, cat, RADIUS_MILES)
 
-    tornado = format_label(
-        check_risk_in_radius(LAT, LON, torn, RADIUS_MILES)
-    )
-    tornado_sig = format_sig(
-        check_risk_in_radius(LAT, LON, torn_sig, RADIUS_MILES)
-    )
+    category = CATEGORY_MAP.get(cat_raw, "None")
 
-    wind_val = format_label(
-        check_risk_in_radius(LAT, LON, wind, RADIUS_MILES)
-    )
-    wind_sig_val = format_sig(
-        check_risk_in_radius(LAT, LON, wind_sig, RADIUS_MILES)
-    )
+    # ----- TORNADO -----
+    point_torn = check_point_in_category(LAT, LON, torn)
+    tornado_raw = point_torn if point_torn else check_radius_in_category(LAT, LON, torn, RADIUS_MILES)
+    tornado = format_label(tornado_raw)
 
-    hail_val = format_label(
-        check_risk_in_radius(LAT, LON, hail, RADIUS_MILES)
-    )
-    hail_sig_val = format_sig(
-        check_risk_in_radius(LAT, LON, hail_sig, RADIUS_MILES)
-    )
+    point_torn_sig = check_point_in_category(LAT, LON, torn_sig)
+    tornado_sig = point_torn_sig if point_torn_sig else check_radius_in_category(LAT, LON, torn_sig, RADIUS_MILES)
+    tornado_sig = format_sig(tornado_sig)
+
+    # ----- WIND -----
+    point_wind = check_point_in_category(LAT, LON, wind)
+    wind_raw = point_wind if point_wind else check_radius_in_category(LAT, LON, wind, RADIUS_MILES)
+    wind_val = format_label(wind_raw)
+
+    point_wind_sig = check_point_in_category(LAT, LON, wind_sig)
+    wind_sig_val = point_wind_sig if point_wind_sig else check_radius_in_category(LAT, LON, wind_sig, RADIUS_MILES)
+    wind_sig_val = format_sig(wind_sig_val)
+
+    # ----- HAIL -----
+    point_hail = check_point_in_category(LAT, LON, hail)
+    hail_raw = point_hail if point_hail else check_radius_in_category(LAT, LON, hail, RADIUS_MILES)
+    hail_val = format_label(hail_raw)
+
+    point_hail_sig = check_point_in_category(LAT, LON, hail_sig)
+    hail_sig_val = point_hail_sig if point_hail_sig else check_radius_in_category(LAT, LON, hail_sig, RADIUS_MILES)
+    hail_sig_val = format_sig(hail_sig_val)
 
     # ----- WRITE TO SHEET -----
-
     sheet.update_acell("F2", category)
     sheet.update_acell("F3", tornado)
     sheet.update_acell("F4", f"Sig {tornado_sig}" if tornado_sig else "")
@@ -150,7 +183,7 @@ def main():
     sheet.update_acell("F7", hail_val)
     sheet.update_acell("F8", f"Sig {hail_sig_val}" if hail_sig_val else "")
 
-    print("Day 1 SPC data updated successfully")
+    print("Day 1 SPC update complete")
 
 if __name__ == "__main__":
     main()
