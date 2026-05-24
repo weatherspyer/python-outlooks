@@ -36,4 +36,4 @@ jobs:
 
       - name: Run SPC Radius Batch Test
         run: |
-          python -u spc_radius_test.py "${{ github.event.inputs.data }}"
+          python -u spc_radius_test.py '${{ github.event.inputs.data }}'
