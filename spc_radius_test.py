@@ -6,24 +6,15 @@ import base64
 
 def get_payload():
     if len(sys.argv) < 2:
-        raise ValueError("Missing payload")
+        raise ValueError("Missing JSON payload argument")
 
-    encoded = sys.argv[1]
+    raw = sys.argv[1]
 
-    print("\n================ RAW BASE64 INPUT ================\n")
-    print(encoded)
-    print("\n==================================================\n")
+    print("\n================ INPUT DEBUG ================\n")
+    print(raw)
+    print("\n=============================================\n")
 
-    try:
-        decoded = base64.b64decode(encoded).decode("utf-8")
-    except Exception as e:
-        raise ValueError(f"Base64 decode failed: {e}")
-
-    print("\n================ DECODED JSON ====================\n")
-    print(decoded)
-    print("\n==================================================\n")
-
-    return json.loads(decoded)
+    return json.loads(raw)
 
 
 # --------------------------------------------------
