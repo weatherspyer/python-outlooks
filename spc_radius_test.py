@@ -2,32 +2,28 @@
 import sys
 import json
 import requests
+import base64
 
-# --------------------------------------------------
-# STEP 1: FETCH PAYLOAD FROM GITHUB ARGUMENT
-# --------------------------------------------------
 def get_payload():
     if len(sys.argv) < 2:
-        raise ValueError("Missing JSON payload argument")
+        raise ValueError("Missing payload")
 
-    raw = sys.argv[1]
+    encoded = sys.argv[1]
 
-    print("\n================ INPUT DEBUG ================\n")
-    print("RAW ARG INPUT:")
-    print(raw)
-    print("\n=============================================\n")
+    print("\n================ RAW BASE64 INPUT ================\n")
+    print(encoded)
+    print("\n==================================================\n")
 
     try:
-        data = json.loads(raw)
+        decoded = base64.b64decode(encoded).decode("utf-8")
     except Exception as e:
-        raise ValueError(f"Invalid JSON payload: {e}")
+        raise ValueError(f"Base64 decode failed: {e}")
 
-    # Handle double-encoded JSON (Apps Script sometimes causes this)
-    if isinstance(data, str):
-        print("Detected double-encoded JSON, decoding again...")
-        data = json.loads(data)
+    print("\n================ DECODED JSON ====================\n")
+    print(decoded)
+    print("\n==================================================\n")
 
-    return data
+    return json.loads(decoded)
 
 
 # --------------------------------------------------
