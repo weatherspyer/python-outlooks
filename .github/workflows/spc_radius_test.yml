@@ -3,8 +3,8 @@ name: Run SPC Radius Batch Test
 on:
   workflow_dispatch:
     inputs:
-      locations:
-        description: "Batch locations JSON (from Apps Script)"
+      data:
+        description: "Full JSON payload (context + locations)"
         required: true
 
 jobs:
@@ -35,7 +35,5 @@ jobs:
         run: echo "${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}" | base64 --decode > credentials.json
 
       - name: Run SPC Radius Batch Test
-        env:
-          INPUT_LOCATIONS: ${{ github.event.inputs.locations }}
         run: |
-          python -u spc_radius_test.py
+          python -u spc_radius_test.py "${{ github.event.inputs.data }}"
