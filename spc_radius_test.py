@@ -1,41 +1,28 @@
 #!/usr/bin/env python3
-import os
+import sys
 import json
 import requests
-import sys
 
 # --------------------------------------------------
-# STEP 1: READ GITHUB INPUT (RAW)
+# STEP 1: FETCH PAYLOAD FROM GITHUB ARGUMENT
 # --------------------------------------------------
-def get_raw_input():
-    raw = os.getenv("INPUT_LOCATIONS")
+def get_payload():
+    if len(sys.argv) < 2:
+        raise ValueError("Missing JSON payload argument")
+
+    raw = sys.argv[1]
 
     print("\n================ INPUT DEBUG ================\n")
-    print("RAW ENV INPUT:")
+    print("RAW ARG INPUT:")
     print(raw)
     print("\n=============================================\n")
-
-    if not raw:
-        raise ValueError("No INPUT_LOCATIONS found")
-
-    return raw
-
-
-# --------------------------------------------------
-# STEP 2: PARSE INPUT SAFELY
-# --------------------------------------------------
-def parse_locations():
-    raw = get_raw_input()
 
     try:
         data = json.loads(raw)
     except Exception as e:
-        print("FAILED TO PARSE JSON")
-        print(f"Error: {e}")
-        print(f"Raw input: {raw}")
-        sys.exit(1)
+        raise ValueError(f"Invalid JSON payload: {e}")
 
-    # Handles double-encoded JSON if needed
+    # Handle double-encoded JSON (Apps Script sometimes causes this)
     if isinstance(data, str):
         print("Detected double-encoded JSON, decoding again...")
         data = json.loads(data)
@@ -44,7 +31,7 @@ def parse_locations():
 
 
 # --------------------------------------------------
-# STEP 3: FETCH SPC DATA
+# STEP 2: FETCH SPC GEOJSON
 # --------------------------------------------------
 URLS = {
     "Category": "https://www.spc.noaa.gov/products/outlook/day1otlk_cat.nolyr.geojson"
@@ -57,35 +44,38 @@ def fetch_geojson(url):
 
 
 # --------------------------------------------------
-# STEP 4: MAIN
+# STEP 3: MAIN PROCESS
 # --------------------------------------------------
 def main():
 
-    locations = parse_locations()
+    payload = get_payload()
+
+    context = payload.get("context", {})
+    locations = payload.get("locations", [])
 
     print("\n================ PARSED INPUT ================\n")
 
-    print(f"Type: {type(locations)}")
-
-    if isinstance(locations, dict):
-        print("Context:")
-        print(json.dumps(locations.get("context", {}), indent=2))
-
-        locations = locations.get("locations", [])
+    print("Context:")
+    print(json.dumps(context, indent=2))
 
     print(f"\nLoaded {len(locations)} locations\n")
 
-    # Preview first location for verification
-    if locations:
-        print("Sample location:")
-        print(json.dumps(locations[0], indent=2))
-        print("\n")
+    if not locations:
+        raise ValueError("No locations received")
 
-    # Load SPC category once
-    cat = fetch_geojson(URLS["Category"])
+    print("Sample location:")
+    print(json.dumps(locations[0], indent=2))
+    print("\n")
 
     # --------------------------------------------------
-    # PROCESS LOCATIONS
+    # LOAD SPC DATA ONCE (efficiency)
+    # --------------------------------------------------
+    cat = fetch_geojson(URLS["Category"])
+
+    print("SPC Category data loaded successfully\n")
+
+    # --------------------------------------------------
+    # PROCESS EACH LOCATION
     # --------------------------------------------------
     for loc in locations:
 
@@ -99,8 +89,14 @@ def main():
         print(f"  Lat/Lon: {lat}, {lon}")
         print(f"  Radius: {radius}")
 
+        # Placeholder for your future shapely logic
         print("  Status: OK\n")
 
+    print("Run complete.")
 
+
+# --------------------------------------------------
+# ENTRY POINT
+# --------------------------------------------------
 if __name__ == "__main__":
     main()
