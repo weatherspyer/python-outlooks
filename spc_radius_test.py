@@ -2,38 +2,49 @@
 import os
 import json
 import requests
+import sys
 
 # --------------------------------------------------
-# STEP 1: READ GITHUB ACTIONS INPUT
+# STEP 1: READ GITHUB INPUT (RAW)
 # --------------------------------------------------
-def get_input():
-    """
-    GitHub Actions passes inputs as environment variables:
-    INPUT_LOCATIONS
-    """
+def get_raw_input():
     raw = os.getenv("INPUT_LOCATIONS")
+
+    print("\n================ INPUT DEBUG ================\n")
+    print("RAW ENV INPUT:")
+    print(raw)
+    print("\n=============================================\n")
 
     if not raw:
         raise ValueError("No INPUT_LOCATIONS found")
 
-    # IMPORTANT: it's a JSON STRING from Apps Script
-    return json.loads(raw)
+    return raw
 
 
 # --------------------------------------------------
-# STEP 2: LOAD LOCATIONS
+# STEP 2: PARSE INPUT SAFELY
 # --------------------------------------------------
 def parse_locations():
-    locations = get_input()
+    raw = get_raw_input()
 
-    if isinstance(locations, str):
-        locations = json.loads(locations)
+    try:
+        data = json.loads(raw)
+    except Exception as e:
+        print("FAILED TO PARSE JSON")
+        print(f"Error: {e}")
+        print(f"Raw input: {raw}")
+        sys.exit(1)
 
-    return locations
+    # Handles double-encoded JSON if needed
+    if isinstance(data, str):
+        print("Detected double-encoded JSON, decoding again...")
+        data = json.loads(data)
+
+    return data
 
 
 # --------------------------------------------------
-# STEP 3: FETCH SPC DATA (single cycle test)
+# STEP 3: FETCH SPC DATA
 # --------------------------------------------------
 URLS = {
     "Category": "https://www.spc.noaa.gov/products/outlook/day1otlk_cat.nolyr.geojson"
@@ -46,17 +57,36 @@ def fetch_geojson(url):
 
 
 # --------------------------------------------------
-# STEP 4: MAIN TEST LOOP
+# STEP 4: MAIN
 # --------------------------------------------------
 def main():
 
     locations = parse_locations()
 
-    print(f"Loaded {len(locations)} locations\n")
+    print("\n================ PARSED INPUT ================\n")
 
-    # Load SPC category once (important efficiency win)
+    print(f"Type: {type(locations)}")
+
+    if isinstance(locations, dict):
+        print("Context:")
+        print(json.dumps(locations.get("context", {}), indent=2))
+
+        locations = locations.get("locations", [])
+
+    print(f"\nLoaded {len(locations)} locations\n")
+
+    # Preview first location for verification
+    if locations:
+        print("Sample location:")
+        print(json.dumps(locations[0], indent=2))
+        print("\n")
+
+    # Load SPC category once
     cat = fetch_geojson(URLS["Category"])
 
+    # --------------------------------------------------
+    # PROCESS LOCATIONS
+    # --------------------------------------------------
     for loc in locations:
 
         name = loc.get("name")
@@ -69,7 +99,6 @@ def main():
         print(f"  Lat/Lon: {lat}, {lon}")
         print(f"  Radius: {radius}")
 
-        # TEMP OUTPUT (we'll plug in shapely logic next step)
         print("  Status: OK\n")
 
 
