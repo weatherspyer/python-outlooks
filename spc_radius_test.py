@@ -68,11 +68,13 @@ def main():
 
         name = loc.get("name")
         wfo = loc.get("wfo")
+        region = loc.get("region")
         lat = loc.get("lat")
         lon = loc.get("lon")
         radius = loc.get("radius")
 
         print(f"Processing {name} ({wfo})")
+        print(f"  Region: {region}")
         print(f"  Lat/Lon: {lat}, {lon}")
         print(f"  Radius: {radius}")
 
