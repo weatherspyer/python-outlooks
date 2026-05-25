@@ -61,7 +61,6 @@ SCOPES = [
 
 
 def get_sheet():
-
     creds = Credentials.from_service_account_file(
         "credentials.json",
         scopes=SCOPES
@@ -69,9 +68,7 @@ def get_sheet():
 
     gc = gspread.authorize(creds)
 
-    spreadsheet = gc.open_by_key(SHEET_ID)
-
-    return spreadsheet.worksheet(SHEET_NAME)
+    return gc.open_by_key(SHEET_ID).worksheet(SHEET_NAME)
 
 
 # ==================================================
@@ -100,8 +97,6 @@ DAY_URLS = {
     }
 }
 
-DAY48_URL = "https://www.spc.noaa.gov/products/exper/day4-8/day{}prob.nolyr.geojson"
-
 
 CATEGORY_MAP = {
     "MRGL": "Marginal",
@@ -118,24 +113,9 @@ CATEGORY_MAP = {
 # ==================================================
 
 def fetch_geojson(url):
-
-    response = requests.get(url, timeout=30)
-
-    response.raise_for_status()
-
-    return response.json()
-
-
-def format_probability(label):
-
-    if not label:
-        return "None"
-
-    try:
-        return f"{float(label) * 100:.0f}%"
-
-    except:
-        return str(label)
+    r = requests.get(url, timeout=30)
+    r.raise_for_status()
+    return r.json()
 
 
 def calculate_direction(lat1, lon1, lat2, lon2):
@@ -146,118 +126,77 @@ def calculate_direction(lat1, lon1, lat2, lon2):
     lat2 = math.radians(lat2)
 
     x = math.sin(dlon) * math.cos(lat2)
-
     y = (
         math.cos(lat1) * math.sin(lat2)
         - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
     )
 
-    initial_bearing = math.atan2(x, y)
+    bearing = (math.degrees(math.atan2(x, y)) + 360) % 360
 
-    bearing = (math.degrees(initial_bearing) + 360) % 360
-
-    directions = [
+    dirs = [
         "N", "NNE", "NE", "ENE",
         "E", "ESE", "SE", "SSE",
         "S", "SSW", "SW", "WSW",
         "W", "WNW", "NW", "NNW"
     ]
 
-    index = round(bearing / 22.5) % 16
-
-    return directions[index]
+    return dirs[round(bearing / 22.5) % 16]
 
 
 # ==================================================
-# CORE CHECK LOGIC
+# CORE ANALYSIS
 # ==================================================
 
 def analyze_risk(lat, lon, geojson, radius_miles):
 
     point = Point(lon, lat)
-
     radius_deg = radius_miles / 69.0
-
     search_area = point.buffer(radius_deg)
 
     best_dn = -1
-
     best_label = None
-
     best_indicator = "None"
-
     best_distance = ""
-
     best_direction = ""
 
     for feature in geojson.get("features", []):
 
         geom = feature.get("geometry")
-
-        if not geom:
-            continue
-
-        if geom.get("type") == "GeometryCollection":
+        if not geom or geom.get("type") == "GeometryCollection":
             continue
 
         polygon = shape(geom)
-
         props = feature.get("properties", {})
 
         dn = props.get("DN", 0)
-
         label = props.get("LABEL")
 
-        # ------------------------------------------
-        # POINT HIT
-        # ------------------------------------------
-
+        # POINT
         if polygon.contains(point):
-
             if dn > best_dn:
-
                 best_dn = dn
-
                 best_label = label
-
                 best_indicator = "Point"
-
                 best_distance = ""
-
                 best_direction = ""
 
-        # ------------------------------------------
-        # RADIUS HIT
-        # ------------------------------------------
-
+        # RADIUS
         elif polygon.intersects(search_area):
-
             if dn > best_dn:
-
                 best_dn = dn
-
                 best_label = label
-
                 best_indicator = "Radius"
 
-                nearest_geom = nearest_points(point, polygon)[1]
+                nearest = nearest_points(point, polygon)[1]
 
-                nearest_lon = nearest_geom.x
-                nearest_lat = nearest_geom.y
-
-                distance_deg = point.distance(nearest_geom)
-
-                distance_miles = round(distance_deg * 69)
+                distance_miles = round(point.distance(nearest) * 69)
 
                 direction = calculate_direction(
-                    lat,
-                    lon,
-                    nearest_lat,
-                    nearest_lon
+                    lat, lon,
+                    nearest.y, nearest.x
                 )
 
                 best_distance = distance_miles
-
                 best_direction = direction
 
     return {
@@ -269,7 +208,7 @@ def analyze_risk(lat, lon, geojson, radius_miles):
 
 
 # ==================================================
-# DAY PROCESSORS
+# DAY PROCESSOR (1 & 2)
 # ==================================================
 
 def process_day_1_or_2(day, lat, lon, radius):
@@ -282,64 +221,46 @@ def process_day_1_or_2(day, lat, lon, radius):
     overall_distance = ""
     overall_direction = ""
 
-    # -----------------------------
     # CATEGORY
-    # -----------------------------
-
     category_geo = fetch_geojson(urls["Category"])
 
-    category = analyze_risk(
-        lat,
-        lon,
-        category_geo,
-        radius
-    )
+    category = analyze_risk(lat, lon, category_geo, radius)
 
-    results["category"] = CATEGORY_MAP.get(
-        category["label"],
-        "None"
-    )
+    results["category"] = CATEGORY_MAP.get(category["label"], "None")
 
-    overall_indicator = category["indicator"]
-    overall_distance = category["distance"]
-    overall_direction = category["direction"]
+    # ==================================================
+    # HARD RULE (YOUR FIX)
+    # ==================================================
+    if results["category"] == "None":
 
-    # -----------------------------
-    # HAZARDS
-    # -----------------------------
+        for hazard in ["Tornado", "Hail", "Wind"]:
+            geo = fetch_geojson(urls[hazard])
+            r = analyze_risk(lat, lon, geo, radius)
+            results[hazard] = str(r["label"])
 
+        results["indicator"] = "None"
+        results["distance"] = ""
+        results["direction"] = ""
+
+        return results
+
+    # HAZARDS (only if category exists)
     for hazard in ["Tornado", "Hail", "Wind"]:
 
         geo = fetch_geojson(urls[hazard])
+        r = analyze_risk(lat, lon, geo, radius)
 
-        result = analyze_risk(
-            lat,
-            lon,
-            geo,
-            radius
-        )
+        results[hazard] = str(r["label"])
 
-        results[hazard] = format_probability(
-            result["label"]
-        )
-
-        # PRIORITY:
-        # Point > Radius > None
-
-        if result["indicator"] == "Point":
-
+        if r["indicator"] == "Point":
             overall_indicator = "Point"
             overall_distance = ""
             overall_direction = ""
 
-        elif (
-            result["indicator"] == "Radius"
-            and overall_indicator != "Point"
-        ):
-
+        elif r["indicator"] == "Radius" and overall_indicator != "Point":
             overall_indicator = "Radius"
-            overall_distance = result["distance"]
-            overall_direction = result["direction"]
+            overall_distance = r["distance"]
+            overall_direction = r["direction"]
 
     results["indicator"] = overall_indicator
     results["distance"] = overall_distance
@@ -348,87 +269,30 @@ def process_day_1_or_2(day, lat, lon, radius):
     return results
 
 
+# ==================================================
+# DAY 3
+# ==================================================
+
 def process_day_3(lat, lon, radius):
 
     urls = DAY_URLS["3"]
 
-    results = {}
-
     category_geo = fetch_geojson(urls["Category"])
-
-    category = analyze_risk(
-        lat,
-        lon,
-        category_geo,
-        radius
-    )
-
-    results["category"] = CATEGORY_MAP.get(
-        category["label"],
-        "None"
-    )
+    category = analyze_risk(lat, lon, category_geo, radius)
 
     any_geo = fetch_geojson(urls["Any"])
+    any_r = analyze_risk(lat, lon, any_geo, radius)
 
-    any_result = analyze_risk(
-        lat,
-        lon,
-        any_geo,
-        radius
-    )
+    if category["indicator"] == "Point" or any_r["indicator"] == "Point":
+        return {"indicator": "Point", "distance": "", "direction": ""}
 
-    results["Any"] = format_probability(
-        any_result["label"]
-    )
+    if category["indicator"] == "Radius":
+        return category
 
-    # PRIORITY
+    if any_r["indicator"] == "Radius":
+        return any_r
 
-    if category["indicator"] == "Point" or any_result["indicator"] == "Point":
-
-        results["indicator"] = "Point"
-        results["distance"] = ""
-        results["direction"] = ""
-
-    elif category["indicator"] == "Radius":
-
-        results["indicator"] = "Radius"
-        results["distance"] = category["distance"]
-        results["direction"] = category["direction"]
-
-    elif any_result["indicator"] == "Radius":
-
-        results["indicator"] = "Radius"
-        results["distance"] = any_result["distance"]
-        results["direction"] = any_result["direction"]
-
-    else:
-
-        results["indicator"] = "None"
-        results["distance"] = ""
-        results["direction"] = ""
-
-    return results
-
-
-def process_day_4_to_8(day, lat, lon, radius):
-
-    url = DAY48_URL.format(day)
-
-    geo = fetch_geojson(url)
-
-    result = analyze_risk(
-        lat,
-        lon,
-        geo,
-        radius
-    )
-
-    return {
-        "Any": format_probability(result["label"]),
-        "indicator": result["indicator"],
-        "distance": result["distance"],
-        "direction": result["direction"]
-    }
+    return {"indicator": "None", "distance": "", "direction": ""}
 
 
 # ==================================================
@@ -460,84 +324,13 @@ def main():
 
         print(f"Processing {name} ({wfo})")
 
-        # ==================================================
-        # DAY-SPECIFIC PROCESSING
-        # ==================================================
+        d1 = process_day_1_or_2("1", lat, lon, radius)
 
-        d1 = d2 = d3 = d4 = d5 = d6 = d7 = d8 = {}
-
-        if DAY == "1":
-            d1 = process_day_1_or_2("1", lat, lon, radius)
-
-        elif DAY == "2":
-            d2 = process_day_1_or_2("2", lat, lon, radius)
-
-        elif DAY == "3":
-            d3 = process_day_3(lat, lon, radius)
-
-        elif DAY in ["4", "5", "6", "7", "8"]:
-
-            result = process_day_4_to_8(
-                DAY,
-                lat,
-                lon,
-                radius
-            )
-
-            if DAY == "4":
-                d4 = result
-
-            elif DAY == "5":
-                d5 = result
-
-            elif DAY == "6":
-                d6 = result
-
-            elif DAY == "7":
-                d7 = result
-
-            elif DAY == "8":
-                d8 = result
-
-        # ==================================================
-        # FINAL INDICATOR
-        # ==================================================
-
-        final_indicator = "None"
-        final_distance = ""
-        final_direction = ""
-
-        for dataset in [d1, d2, d3, d4, d5, d6, d7, d8]:
-
-            if not dataset:
-                continue
-
-            if dataset.get("indicator") == "Point":
-
-                final_indicator = "Point"
-                final_distance = ""
-                final_direction = ""
-
-                break
-
-            elif (
-                dataset.get("indicator") == "Radius"
-                and final_indicator != "Point"
-            ):
-
-                final_indicator = "Radius"
-                final_distance = dataset.get("distance", "")
-                final_direction = dataset.get("direction", "")
-
-        # ==================================================
-        # BUILD FINAL ROW
-        # ==================================================
+        final_indicator = d1.get("indicator", "None")
+        final_distance = d1.get("distance", "")
+        final_direction = d1.get("direction", "")
 
         row = [
-
-            # ------------------------------------------
-            # CORE
-            # ------------------------------------------
 
             timestamp,
             name,
@@ -547,77 +340,30 @@ def main():
             DAY,
             ISSUE,
 
-            # ------------------------------------------
-            # RESERVED
-            # ------------------------------------------
-
-            "",     # Threat Emoji
-            "",     # Day Emoji
-            "",     # Outlook Type Emoji
-            "",     # Outlook Threat Type
-
-            # ------------------------------------------
-            # REGION / TITLE / TOGGLE
-            # ------------------------------------------
+            "", "", "", "",
 
             region,
-            "",     # Title
-            "",     # Toggle
+            "",
+            "",
 
-            # ------------------------------------------
-            # INDICATOR
-            # ------------------------------------------
+            "NEW",   # STATUS (NEW COLUMN ADDED)
 
             final_indicator,
             final_distance,
             final_direction,
 
-            # ------------------------------------------
-            # DAY 1
-            # ------------------------------------------
-
             d1.get("category", ""),
             d1.get("Tornado", ""),
             d1.get("Hail", ""),
-            d1.get("Wind", ""),
-
-            # ------------------------------------------
-            # DAY 2
-            # ------------------------------------------
-
-            d2.get("category", ""),
-            d2.get("Tornado", ""),
-            d2.get("Hail", ""),
-            d2.get("Wind", ""),
-
-            # ------------------------------------------
-            # DAY 3
-            # ------------------------------------------
-
-            d3.get("category", ""),
-            d3.get("Any", ""),
-
-            # ------------------------------------------
-            # DAY 4-8
-            # ------------------------------------------
-
-            d4.get("Any", ""),
-            d5.get("Any", ""),
-            d6.get("Any", ""),
-            d7.get("Any", ""),
-            d8.get("Any", "")
+            d1.get("Wind", "")
         ]
 
-        sheet.insert_row(row, index=2)
+        sheet.insert_row(row, 2)
 
-        print(f"Inserted row for {name}\n")
+        print(f"Inserted {name}")
 
     print("Run complete.")
 
-
-# ==================================================
-# ENTRY POINT
-# ==================================================
 
 if __name__ == "__main__":
     main()
