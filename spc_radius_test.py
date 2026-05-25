@@ -148,11 +148,11 @@ def calculate_indicator_from_category(category_result, lat, lon, radius):
 
     polygon = shape(geom)
 
-    # ---------------- POINT ----------------
+    # POINT
     if polygon.contains(point):
         return {"indicator": "Point", "distance": "", "direction": ""}
 
-    # ---------------- RADIUS ----------------
+    # RADIUS
     if polygon.intersects(search_area):
 
         nearest = nearest_points(point, polygon)[1]
@@ -171,7 +171,6 @@ def calculate_indicator_from_category(category_result, lat, lon, radius):
             "direction": direction
         }
 
-    # ---------------- NONE ----------------
     return {"indicator": "None", "distance": "", "direction": ""}
 
 
@@ -185,11 +184,7 @@ def process_day_1_or_2(day, lat, lon, radius):
 
     category_geo = fetch_geojson(urls["Category"])
 
-    category_feature = None
-
-    for f in category_geo.get("features", []):
-        category_feature = f
-        break
+    category_feature = next(iter(category_geo["features"]))
 
     category_result = {
         "label": category_feature["properties"].get("LABEL"),
@@ -215,8 +210,7 @@ def process_day_1_or_2(day, lat, lon, radius):
         geo = fetch_geojson(urls[hazard])
 
         for f in geo.get("features", []):
-            props = f.get("properties", {})
-            results[hazard] = props.get("LABEL", "None")
+            results[hazard] = f["properties"].get("LABEL", "None")
             break
 
     return results
@@ -231,7 +225,6 @@ def process_day_3(lat, lon, radius):
     urls = DAY_URLS["3"]
 
     cat_geo = fetch_geojson(urls["Category"])
-
     cat_feature = next(iter(cat_geo["features"]))
 
     cat_result = {
@@ -240,7 +233,6 @@ def process_day_3(lat, lon, radius):
     }
 
     any_geo = fetch_geojson(urls["Any"])
-
     any_feature = next(iter(any_geo["features"]))
 
     any_result = {
@@ -248,17 +240,17 @@ def process_day_3(lat, lon, radius):
         "geometry": any_feature["geometry"]
     }
 
-    indicator_cat = calculate_indicator_from_category(cat_result, lat, lon, radius)
-    indicator_any = calculate_indicator_from_category(any_result, lat, lon, radius)
+    cat_ind = calculate_indicator_from_category(cat_result, lat, lon, radius)
+    any_ind = calculate_indicator_from_category(any_result, lat, lon, radius)
 
-    if indicator_cat["indicator"] == "Point" or indicator_any["indicator"] == "Point":
+    if cat_ind["indicator"] == "Point" or any_ind["indicator"] == "Point":
         indicator = {"indicator": "Point", "distance": "", "direction": ""}
 
-    elif indicator_cat["indicator"] == "Radius":
-        indicator = indicator_cat
+    elif cat_ind["indicator"] == "Radius":
+        indicator = cat_ind
 
-    elif indicator_any["indicator"] == "Radius":
-        indicator = indicator_any
+    elif any_ind["indicator"] == "Radius":
+        indicator = any_ind
 
     else:
         indicator = {"indicator": "None", "distance": "", "direction": ""}
@@ -321,6 +313,8 @@ def main():
             "",
             "",
 
+            "NEW",  # STATUS COLUMN (NEW ADDITION)
+
             d.get("indicator"),
             d.get("distance"),
             d.get("direction"),
@@ -334,6 +328,8 @@ def main():
         sheet.insert_row(row, index=2)
 
         print(f"Inserted {name}")
+
+    print("Run complete.")
 
 
 if __name__ == "__main__":
