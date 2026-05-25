@@ -16,7 +16,7 @@ from google.oauth2.service_account import Credentials
 
 
 # ==================================================
-# INPUT PAYLOAD
+# INPUT
 # ==================================================
 
 if len(sys.argv) < 2:
@@ -38,26 +38,20 @@ payload = get_payload()
 context = payload.get("context", {})
 locations = payload.get("locations", [])
 
-DAY = str(context.get("day"))
+DAY = str(context.get("day", ""))
 OUTLOOK_TYPE = context.get("outlook_type", "")
 OUTLOOK_SOURCE = context.get("outlook_source", "")
 ISSUE = context.get("issue", "")
 
-print("\n================ CONTEXT ================\n")
-print(json.dumps(context, indent=2))
-print("\n=========================================\n")
-
 
 # ==================================================
-# GOOGLE SHEETS
+# SHEETS
 # ==================================================
 
 SHEET_ID = "1HSLnDqg243qkgVJb7tpsnKLEDiaLFM0cCLwU5LQndsg"
 SHEET_NAME = "Log"
 
-SCOPES = [
-    "https://www.googleapis.com/auth/spreadsheets"
-]
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
 
 def get_sheet():
@@ -65,37 +59,34 @@ def get_sheet():
         "credentials.json",
         scopes=SCOPES
     )
-
     gc = gspread.authorize(creds)
-
     return gc.open_by_key(SHEET_ID).worksheet(SHEET_NAME)
 
 
 # ==================================================
-# SPC URLS
+# URLS
 # ==================================================
 
 DAY_URLS = {
-
     "1": {
         "Category": "https://www.spc.noaa.gov/products/outlook/day1otlk_cat.nolyr.geojson",
         "Tornado": "https://www.spc.noaa.gov/products/outlook/day1otlk_torn.nolyr.geojson",
         "Hail": "https://www.spc.noaa.gov/products/outlook/day1otlk_hail.nolyr.geojson",
         "Wind": "https://www.spc.noaa.gov/products/outlook/day1otlk_wind.nolyr.geojson"
     },
-
     "2": {
         "Category": "https://www.spc.noaa.gov/products/outlook/day2otlk_cat.nolyr.geojson",
         "Tornado": "https://www.spc.noaa.gov/products/outlook/day2otlk_torn.nolyr.geojson",
         "Hail": "https://www.spc.noaa.gov/products/outlook/day2otlk_hail.nolyr.geojson",
         "Wind": "https://www.spc.noaa.gov/products/outlook/day2otlk_wind.nolyr.geojson"
     },
-
     "3": {
         "Category": "https://www.spc.noaa.gov/products/outlook/day3otlk_cat.nolyr.geojson",
         "Any": "https://www.spc.noaa.gov/products/outlook/day3otlk_prob.nolyr.geojson"
     }
 }
+
+DAY48_URL = "https://www.spc.noaa.gov/products/exper/day4-8/day{}prob.nolyr.geojson"
 
 
 CATEGORY_MAP = {
@@ -119,9 +110,7 @@ def fetch_geojson(url):
 
 
 def calculate_direction(lat1, lon1, lat2, lon2):
-
     dlon = math.radians(lon2 - lon1)
-
     lat1 = math.radians(lat1)
     lat2 = math.radians(lat2)
 
@@ -208,91 +197,95 @@ def analyze_risk(lat, lon, geojson, radius_miles):
 
 
 # ==================================================
-# DAY PROCESSOR (1 & 2)
+# DAY ENGINE (SINGLE DAY ONLY)
 # ==================================================
 
-def process_day_1_or_2(day, lat, lon, radius):
+def process_day(lat, lon, radius):
 
-    urls = DAY_URLS[day]
+    # -------------------------
+    # DAY 1–3
+    # -------------------------
+    if DAY in ["1", "2", "3"]:
 
-    results = {}
+        urls = DAY_URLS[DAY]
 
-    overall_indicator = "None"
-    overall_distance = ""
-    overall_direction = ""
+        result = {}
 
-    # CATEGORY
-    category_geo = fetch_geojson(urls["Category"])
+        category_geo = fetch_geojson(urls["Category"])
+        category = analyze_risk(lat, lon, category_geo, radius)
 
-    category = analyze_risk(lat, lon, category_geo, radius)
+        result["category"] = CATEGORY_MAP.get(category["label"], "None")
 
-    results["category"] = CATEGORY_MAP.get(category["label"], "None")
+        # DAY 3 special
+        if DAY == "3":
+            any_geo = fetch_geojson(urls["Any"])
+            any_r = analyze_risk(lat, lon, any_geo, radius)
+            result["Any"] = str(any_r["label"])
 
-    # ==================================================
-    # HARD RULE (YOUR FIX)
-    # ==================================================
-    if results["category"] == "None":
+            result["indicator"] = any_r["indicator"]
+            result["distance"] = any_r["distance"]
+            result["direction"] = any_r["direction"]
 
-        for hazard in ["Tornado", "Hail", "Wind"]:
-            geo = fetch_geojson(urls[hazard])
+            return result
+
+        # DAY 1–2 hazards
+        hazards = ["Tornado", "Hail", "Wind"]
+
+        overall_indicator = "None"
+        overall_distance = ""
+        overall_direction = ""
+
+        # FIX RULE: if category is None → indicator forced None
+        if result["category"] == "None":
+
+            for h in hazards:
+                geo = fetch_geojson(urls[h])
+                r = analyze_risk(lat, lon, geo, radius)
+                result[h] = str(r["label"])
+
+            result["indicator"] = "None"
+            result["distance"] = ""
+            result["direction"] = ""
+            return result
+
+        for h in hazards:
+
+            geo = fetch_geojson(urls[h])
             r = analyze_risk(lat, lon, geo, radius)
-            results[hazard] = str(r["label"])
 
-        results["indicator"] = "None"
-        results["distance"] = ""
-        results["direction"] = ""
+            result[h] = str(r["label"])
 
-        return results
+            if r["indicator"] == "Point":
+                overall_indicator = "Point"
+                overall_distance = ""
+                overall_direction = ""
 
-    # HAZARDS (only if category exists)
-    for hazard in ["Tornado", "Hail", "Wind"]:
+            elif r["indicator"] == "Radius" and overall_indicator != "Point":
+                overall_indicator = "Radius"
+                overall_distance = r["distance"]
+                overall_direction = r["direction"]
 
-        geo = fetch_geojson(urls[hazard])
-        r = analyze_risk(lat, lon, geo, radius)
+        result["indicator"] = overall_indicator
+        result["distance"] = overall_distance
+        result["direction"] = overall_direction
 
-        results[hazard] = str(r["label"])
-
-        if r["indicator"] == "Point":
-            overall_indicator = "Point"
-            overall_distance = ""
-            overall_direction = ""
-
-        elif r["indicator"] == "Radius" and overall_indicator != "Point":
-            overall_indicator = "Radius"
-            overall_distance = r["distance"]
-            overall_direction = r["direction"]
-
-    results["indicator"] = overall_indicator
-    results["distance"] = overall_distance
-    results["direction"] = overall_direction
-
-    return results
+        return result
 
 
-# ==================================================
-# DAY 3
-# ==================================================
+    # -------------------------
+    # DAY 4–8
+    # -------------------------
+    url = DAY48_URL.format(DAY)
 
-def process_day_3(lat, lon, radius):
+    geo = fetch_geojson(url)
+    r = analyze_risk(lat, lon, geo, radius)
 
-    urls = DAY_URLS["3"]
-
-    category_geo = fetch_geojson(urls["Category"])
-    category = analyze_risk(lat, lon, category_geo, radius)
-
-    any_geo = fetch_geojson(urls["Any"])
-    any_r = analyze_risk(lat, lon, any_geo, radius)
-
-    if category["indicator"] == "Point" or any_r["indicator"] == "Point":
-        return {"indicator": "Point", "distance": "", "direction": ""}
-
-    if category["indicator"] == "Radius":
-        return category
-
-    if any_r["indicator"] == "Radius":
-        return any_r
-
-    return {"indicator": "None", "distance": "", "direction": ""}
+    return {
+        "Any": str(r["label"]),
+        "indicator": r["indicator"],
+        "distance": r["distance"],
+        "direction": r["direction"]
+    }
 
 
 # ==================================================
@@ -300,9 +293,6 @@ def process_day_3(lat, lon, radius):
 # ==================================================
 
 def main():
-
-    if not locations:
-        raise ValueError("No locations received")
 
     sheet = get_sheet()
 
@@ -324,14 +314,36 @@ def main():
 
         print(f"Processing {name} ({wfo})")
 
-        d1 = process_day_1_or_2("1", lat, lon, radius)
+        result = process_day(lat, lon, radius)
 
-        final_indicator = d1.get("indicator", "None")
-        final_distance = d1.get("distance", "")
-        final_direction = d1.get("direction", "")
+        # =========================
+        # DAY COLUMN ROUTING
+        # =========================
+
+        day1 = day2 = day3 = day4 = day5 = day6 = day7 = day8 = ""
+
+        if DAY == "1":
+            day1 = result.get("category", "")
+        elif DAY == "2":
+            day2 = result.get("category", "")
+        elif DAY == "3":
+            day3 = result.get("Any", "")
+        elif DAY == "4":
+            day4 = result.get("Any", "")
+        elif DAY == "5":
+            day5 = result.get("Any", "")
+        elif DAY == "6":
+            day6 = result.get("Any", "")
+        elif DAY == "7":
+            day7 = result.get("Any", "")
+        elif DAY == "8":
+            day8 = result.get("Any", "")
+
+        # =========================
+        # ROW BUILD
+        # =========================
 
         row = [
-
             timestamp,
             name,
             wfo,
@@ -345,17 +357,30 @@ def main():
             region,
             "",
             "",
+            "NEW",
 
-            "NEW",   # STATUS (NEW COLUMN ADDED)
+            result.get("indicator", ""),
+            result.get("distance", ""),
+            result.get("direction", ""),
 
-            final_indicator,
-            final_distance,
-            final_direction,
+            day1,
+            result.get("Tornado", ""),
+            result.get("Hail", ""),
+            result.get("Wind", ""),
 
-            d1.get("category", ""),
-            d1.get("Tornado", ""),
-            d1.get("Hail", ""),
-            d1.get("Wind", "")
+            day2,
+            result.get("Tornado", ""),
+            result.get("Hail", ""),
+            result.get("Wind", ""),
+
+            day3,
+            result.get("Any", ""),
+
+            day4,
+            day5,
+            day6,
+            day7,
+            day8
         ]
 
         sheet.insert_row(row, 2)
