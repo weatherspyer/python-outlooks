@@ -33,7 +33,7 @@ ISSUE = context.get("issue", "")
 
 
 # ==================================================
-# CATEGORY RISK MAP (ONLY CATEGORY)
+# CATEGORY MAP ONLY
 # ==================================================
 
 RISK_MAP = {
@@ -61,7 +61,6 @@ def safe(value):
 def to_percent(value):
     if value in [None, ""]:
         return "None"
-
     try:
         v = float(value)
         if v == 0:
@@ -152,13 +151,11 @@ def analyze_risk(lat, lon, geojson, radius_miles):
         raw = props.get("LABEL")
         dn = props.get("DN", 0)
 
-        label = raw  # KEEP RAW
-
         if polygon.contains(point):
             if dn > best_dn:
                 best_dn = dn
                 best = {
-                    "label": label,
+                    "label": raw,
                     "indicator": "Point",
                     "distance": "",
                     "direction": ""
@@ -170,7 +167,7 @@ def analyze_risk(lat, lon, geojson, radius_miles):
                 nearest = nearest_points(point, polygon)[1]
 
                 best = {
-                    "label": label,
+                    "label": raw,
                     "indicator": "Radius",
                     "distance": round(point.distance(nearest) * 69),
                     "direction": calculate_direction(lat, lon, nearest.y, nearest.x)
@@ -180,7 +177,7 @@ def analyze_risk(lat, lon, geojson, radius_miles):
 
 
 # ==================================================
-# DAY PROCESSOR
+# PROCESS DAY
 # ==================================================
 
 def process_day(lat, lon, radius):
@@ -218,10 +215,8 @@ def process_day(lat, lon, radius):
 
         cat = analyze_risk(lat, lon, fetch_geojson(url_map["Category"]), radius)
 
-        # CATEGORY ONLY FORMATTED
         base["category"] = RISK_MAP.get(cat["label"], "None")
 
-        # IF NO CATEGORY → FORCE ALL NONE
         if base["category"] == "None":
             base["tornado"] = "None"
             base["hail"] = "None"
@@ -229,7 +224,6 @@ def process_day(lat, lon, radius):
             base["indicator"] = "None"
             return base
 
-        # HAZARDS → PERCENT FORMAT
         base["tornado"] = to_percent(analyze_risk(lat, lon, fetch_geojson(url_map["Tornado"]), radius)["label"])
         base["hail"] = to_percent(analyze_risk(lat, lon, fetch_geojson(url_map["Hail"]), radius)["label"])
         base["wind"] = to_percent(analyze_risk(lat, lon, fetch_geojson(url_map["Wind"]), radius)["label"])
@@ -242,7 +236,7 @@ def process_day(lat, lon, radius):
 
 
     # -------------------------
-    # DAY 3
+    # DAY 3 (FIXED PROPERLY)
     # -------------------------
     if DAY == "3":
 
@@ -255,7 +249,11 @@ def process_day(lat, lon, radius):
         ), radius)
 
         base["category"] = RISK_MAP.get(cat["label"], "None")
-        base["any"] = safe(any_r["label"])
+
+        # IMPORTANT FIX:
+        # Day 3 Risk = CATEGORY (NOT probability)
+        # Any Risk = probability (formatted)
+        base["any"] = to_percent(any_r["label"])
 
         if cat["indicator"] == "Point" or any_r["indicator"] == "Point":
             base["indicator"] = "Point"
@@ -273,7 +271,7 @@ def process_day(lat, lon, radius):
     url = f"https://www.spc.noaa.gov/products/exper/day4-8/day{DAY}prob.nolyr.geojson"
     r = analyze_risk(lat, lon, fetch_geojson(url), radius)
 
-    base["any"] = safe(r["label"])
+    base["any"] = to_percent(r["label"])
     base["indicator"] = r["indicator"]
     base["distance"] = r["distance"]
     base["direction"] = r["direction"]
@@ -305,10 +303,6 @@ def main():
 
         r = process_day(lat, lon, radius)
 
-        # ==================================================
-        # STRICT SINGLE DAY OUTPUT
-        # ==================================================
-
         day = {str(i): "" for i in range(1, 9)}
 
         tornado = hail = wind = ""
@@ -322,7 +316,7 @@ def main():
             tornado, hail, wind = r["tornado"], r["hail"], r["wind"]
 
         elif DAY == "3":
-            day["3"] = r["any"]
+            day["3"] = r["category"]
 
         elif DAY == "4":
             day["4"] = r["any"]
