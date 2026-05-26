@@ -34,6 +34,10 @@ jobs:
       - name: Create credentials.json
         run: echo "${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}" | base64 --decode > credentials.json
 
+      # ✅ ADD WEBHOOK SECRETS AS ENV VARS (THIS WAS MISSING)
       - name: Run SPC Radius Batch Test
+        env:
+          GOOGLE_SHEETS_WEBHOOK_API_URL_ID: ${{ secrets.GOOGLE_SHEETS_WEBHOOK_API_URL_ID }}
+          GOOGLE_SHEETS_WEBHOOK_API_KEY: ${{ secrets.GOOGLE_SHEETS_WEBHOOK_API_KEY }}
         run: |
           python -u spc_radius_test.py '${{ github.event.inputs.data }}'
