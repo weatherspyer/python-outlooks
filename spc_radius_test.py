@@ -33,7 +33,7 @@ ISSUE = context.get("issue", "")
 
 
 # ==================================================
-# RISK MAP (NO BLANK STATES)
+# RISK MAP
 # ==================================================
 
 RISK_MAP = {
@@ -138,7 +138,7 @@ def analyze_risk(lat, lon, geojson, radius_miles):
         props = feature.get("properties", {})
         raw = props.get("LABEL")
 
-        # ❌ HARD SKIP TSTM
+        # HARD IGNORE TSTM
         if raw == "TSTM":
             continue
 
@@ -171,7 +171,7 @@ def analyze_risk(lat, lon, geojson, radius_miles):
 
 
 # ==================================================
-# PROCESS DAY
+# PROCESS DAY (STRICT OUTPUT PER DAY)
 # ==================================================
 
 def process_day(lat, lon, radius):
@@ -187,9 +187,9 @@ def process_day(lat, lon, radius):
         "direction": ""
     }
 
-    # -------------------------
+    # ==================================================
     # DAY 1 / 2
-    # -------------------------
+    # ==================================================
     if DAY in ["1", "2"]:
 
         url_map = {
@@ -212,7 +212,6 @@ def process_day(lat, lon, radius):
         base["category"] = RISK_MAP.get(cat["label"], "None")
 
         if base["category"] == "None":
-            base["indicator"] = "None"
             return base
 
         base["tornado"] = to_percent(
@@ -225,16 +224,16 @@ def process_day(lat, lon, radius):
             analyze_risk(lat, lon, fetch_geojson(url_map["Wind"]), radius)["label"]
         )
 
-        base["indicator"] = cat["indicator"] if cat["indicator"] in ["Point", "Radius"] else "None"
+        base["indicator"] = cat["indicator"]
         base["distance"] = cat["distance"]
         base["direction"] = cat["direction"]
 
         return base
 
 
-    # -------------------------
+    # ==================================================
     # DAY 3
-    # -------------------------
+    # ==================================================
     if DAY == "3":
 
         cat = analyze_risk(lat, lon, fetch_geojson(
@@ -246,27 +245,27 @@ def process_day(lat, lon, radius):
         ), radius)
 
         base["category"] = RISK_MAP.get(cat["label"], "None")
-        base["any"] = to_percent(any_r["label"])
 
         if base["category"] == "None":
-            base["indicator"] = "None"
             return base
 
-        base["indicator"] = cat["indicator"] if cat["indicator"] in ["Point", "Radius"] else "None"
+        base["any"] = to_percent(any_r["label"])
+
+        base["indicator"] = cat["indicator"]
         base["distance"] = cat["distance"]
         base["direction"] = cat["direction"]
 
         return base
 
 
-    # -------------------------
+    # ==================================================
     # DAY 4–8
-    # -------------------------
+    # ==================================================
     url = f"https://www.spc.noaa.gov/products/exper/day4-8/day{DAY}prob.nolyr.geojson"
     r = analyze_risk(lat, lon, fetch_geojson(url), radius)
 
     base["any"] = to_percent(r["label"])
-    base["indicator"] = r["indicator"] if r["indicator"] in ["Point", "Radius"] else "None"
+    base["indicator"] = r["indicator"]
     base["distance"] = r["distance"]
     base["direction"] = r["direction"]
 
@@ -297,31 +296,20 @@ def main():
 
         r = process_day(lat, lon, radius)
 
-        day = {str(i): "" for i in range(1, 9)}
+        # STRICT COLUMN MAPPING (NO CROSS DAY LEAKS)
+        day1 = r["category"] if DAY == "1" else ""
+        day2 = r["category"] if DAY == "2" else ""
+        day3 = r["category"] if DAY == "3" else ""
 
-        tornado = hail = wind = ""
+        day4 = r["any"] if DAY == "4" else ""
+        day5 = r["any"] if DAY == "5" else ""
+        day6 = r["any"] if DAY == "6" else ""
+        day7 = r["any"] if DAY == "7" else ""
+        day8 = r["any"] if DAY == "8" else ""
 
-        if DAY == "1":
-            day["1"] = r["category"]
-            tornado, hail, wind = r["tornado"], r["hail"], r["wind"]
-
-        elif DAY == "2":
-            day["2"] = r["category"]
-            tornado, hail, wind = r["tornado"], r["hail"], r["wind"]
-
-        elif DAY == "3":
-            day["3"] = r["category"]
-
-        elif DAY == "4":
-            day["4"] = r["any"]
-        elif DAY == "5":
-            day["5"] = r["any"]
-        elif DAY == "6":
-            day["6"] = r["any"]
-        elif DAY == "7":
-            day["7"] = r["any"]
-        elif DAY == "8":
-            day["8"] = r["any"]
+        tornado = r["tornado"] if DAY == "1" else ""
+        hail = r["hail"] if DAY == "1" else ""
+        wind = r["wind"] if DAY == "1" else ""
 
         row = [
             timestamp,
@@ -344,24 +332,24 @@ def main():
             r["distance"],
             r["direction"],
 
-            day["1"],
-            tornado if DAY == "1" else "",
-            hail if DAY == "1" else "",
-            wind if DAY == "1" else "",
+            day1,
+            tornado,
+            hail,
+            wind,
 
-            day["2"],
-            tornado if DAY == "2" else "",
-            hail if DAY == "2" else "",
-            wind if DAY == "2" else "",
+            day2,
+            tornado,
+            hail,
+            wind,
 
-            day["3"],
-            r.get("any", ""),
+            day3,
+            r["any"],
 
-            day["4"],
-            day["5"],
-            day["6"],
-            day["7"],
-            day["8"]
+            day4,
+            day5,
+            day6,
+            day7,
+            day8
         ]
 
         sheet.insert_row(row, 2)
