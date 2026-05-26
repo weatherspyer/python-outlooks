@@ -95,10 +95,6 @@ def calculate_direction(lat1, lon1, lat2, lon2):
     return dirs[round(bearing / 22.5) % 16]
 
 
-# ==================================================
-# RISK ANALYSIS
-# ==================================================
-
 def analyze_risk(lat, lon, geojson, radius_miles):
 
     point = Point(lon, lat)
@@ -123,7 +119,6 @@ def analyze_risk(lat, lon, geojson, radius_miles):
         dn = props.get("DN", 0)
         label = props.get("LABEL")
 
-        # Point hit
         if polygon.contains(point):
             if dn > best_dn:
                 best_dn = dn
@@ -132,7 +127,6 @@ def analyze_risk(lat, lon, geojson, radius_miles):
                 best_distance = ""
                 best_direction = ""
 
-        # Radius hit
         elif polygon.intersects(search_area):
             if dn > best_dn:
                 best_dn = dn
@@ -175,6 +169,7 @@ def process_day(lat, lon, radius):
     # -------------------------
     # DAY 1 / 2
     # -------------------------
+
     if DAY in ["1", "2"]:
 
         url_map = {
@@ -229,9 +224,11 @@ def process_day(lat, lon, radius):
 
         return result
 
+
     # -------------------------
     # DAY 3
     # -------------------------
+
     if DAY == "3":
 
         cat_url = "https://www.spc.noaa.gov/products/outlook/day3otlk_cat.nolyr.geojson"
@@ -256,9 +253,11 @@ def process_day(lat, lon, radius):
 
         return result
 
+
     # -------------------------
     # DAY 4–8
     # -------------------------
+
     url = f"https://www.spc.noaa.gov/products/exper/day4-8/day{DAY}prob.nolyr.geojson"
     r = analyze_risk(lat, lon, fetch_geojson(url), radius)
 
@@ -296,7 +295,6 @@ def main():
 
         r = process_day(lat, lon, radius)
 
-        # Strict day routing
         day1 = day2 = day3 = day4 = day5 = day6 = day7 = day8 = ""
 
         if DAY == "1":
