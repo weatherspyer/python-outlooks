@@ -24,9 +24,6 @@ if len(sys.argv) < 2:
 
 def get_payload():
     raw = sys.argv[1]
-    print("\n================ INPUT DEBUG ================\n")
-    print(raw)
-    print("\n=============================================\n")
     return json.loads(raw)
 
 
@@ -116,7 +113,7 @@ def analyze_risk(lat, lon, geojson, radius_miles):
 
         raw_label = props.get("LABEL")
 
-        # ---- NORMALIZE LABEL ----
+        # normalize TSTM -> None
         if raw_label in ["TSTM", None, ""]:
             label = "None"
         else:
@@ -155,7 +152,7 @@ def analyze_risk(lat, lon, geojson, radius_miles):
 
 
 # ==================================================
-# DAY ENGINE
+# DAY PROCESSOR
 # ==================================================
 
 def process_day(lat, lon, radius):
@@ -171,9 +168,6 @@ def process_day(lat, lon, radius):
         "direction": ""
     }
 
-    # -------------------------
-    # DAY 1 / 2
-    # -------------------------
     if DAY in ["1", "2"]:
 
         url_map = {
@@ -212,9 +206,6 @@ def process_day(lat, lon, radius):
         return result
 
 
-    # -------------------------
-    # DAY 3
-    # -------------------------
     if DAY == "3":
 
         cat_url = "https://www.spc.noaa.gov/products/outlook/day3otlk_cat.nolyr.geojson"
@@ -240,9 +231,6 @@ def process_day(lat, lon, radius):
         return result
 
 
-    # -------------------------
-    # DAY 4–8
-    # -------------------------
     url = f"https://www.spc.noaa.gov/products/exper/day4-8/day{DAY}prob.nolyr.geojson"
     r = analyze_risk(lat, lon, fetch_geojson(url), radius)
 
@@ -255,7 +243,7 @@ def process_day(lat, lon, radius):
 
 
 # ==================================================
-# MAIN
+# MAIN (STRICT DAY BLOCK MAPPING)
 # ==================================================
 
 def main():
@@ -280,39 +268,47 @@ def main():
 
         r = process_day(lat, lon, radius)
 
+        # ==================================================
+        # STRICT SINGLE-DAY OUTPUT BLOCK (NO CROSS FILL)
+        # ==================================================
+
         day1 = day2 = day3 = day4 = day5 = day6 = day7 = day8 = ""
 
         tornado = hail = wind = ""
 
         if DAY == "1":
-            day1 = r.get("category", "")
-            tornado = r.get("tornado", "")
-            hail = r.get("hail", "")
-            wind = r.get("wind", "")
+            day1 = r["category"]
+            tornado = r["tornado"]
+            hail = r["hail"]
+            wind = r["wind"]
 
         elif DAY == "2":
-            day2 = r.get("category", "")
-            tornado = r.get("tornado", "")
-            hail = r.get("hail", "")
-            wind = r.get("wind", "")
+            day2 = r["category"]
+            tornado = r["tornado"]
+            hail = r["hail"]
+            wind = r["wind"]
 
         elif DAY == "3":
-            day3 = r.get("any", "")
+            day3 = r["any"]
 
         elif DAY == "4":
-            day4 = r.get("any", "")
+            day4 = r["any"]
 
         elif DAY == "5":
-            day5 = r.get("any", "")
+            day5 = r["any"]
 
         elif DAY == "6":
-            day6 = r.get("any", "")
+            day6 = r["any"]
 
         elif DAY == "7":
-            day7 = r.get("any", "")
+            day7 = r["any"]
 
         elif DAY == "8":
-            day8 = r.get("any", "")
+            day8 = r["any"]
+
+        # ==================================================
+        # ROW BUILD
+        # ==================================================
 
         row = [
             timestamp,
