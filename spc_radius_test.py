@@ -23,7 +23,7 @@ payload = json.loads(sys.argv[1])
 context = payload.get("context", {})
 locations = payload.get("locations", [])
 
-DAY = int(context.get("day", 0))
+DAY = str(context.get("day", ""))
 OUTLOOK_TYPE = context.get("outlook_type", "")
 OUTLOOK_SOURCE = context.get("outlook_source", "")
 ISSUE = context.get("issue", "")
