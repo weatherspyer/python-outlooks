@@ -157,10 +157,10 @@ def process_day(lat, lon, radius):
 
     result = {
         "category": "",
-        "Tornado": "",
-        "Hail": "",
-        "Wind": "",
-        "Any": "",
+        "any": "",
+        "tornado": "",
+        "hail": "",
+        "wind": "",
         "indicator": "None",
         "distance": "",
         "direction": ""
@@ -169,7 +169,6 @@ def process_day(lat, lon, radius):
     # -------------------------
     # DAY 1 / 2
     # -------------------------
-
     if DAY in ["1", "2"]:
 
         url_map = {
@@ -194,33 +193,13 @@ def process_day(lat, lon, radius):
 
         hazards = ["Tornado", "Hail", "Wind"]
 
-        if result["category"] == "None":
-            for h in hazards:
-                r = analyze_risk(lat, lon, fetch_geojson(urls[h]), radius)
-                result[h] = str(r["label"])
-            return result
-
-        overall_indicator = "None"
-        overall_distance = ""
-        overall_direction = ""
-
         for h in hazards:
             r = analyze_risk(lat, lon, fetch_geojson(urls[h]), radius)
-            result[h] = str(r["label"])
+            result[h.lower()] = r["label"]
 
-            if r["indicator"] == "Point":
-                overall_indicator = "Point"
-                overall_distance = ""
-                overall_direction = ""
-
-            elif r["indicator"] == "Radius" and overall_indicator != "Point":
-                overall_indicator = "Radius"
-                overall_distance = r["distance"]
-                overall_direction = r["direction"]
-
-        result["indicator"] = overall_indicator
-        result["distance"] = overall_distance
-        result["direction"] = overall_direction
+        result["indicator"] = cat["indicator"]
+        result["distance"] = cat["distance"]
+        result["direction"] = cat["direction"]
 
         return result
 
@@ -228,7 +207,6 @@ def process_day(lat, lon, radius):
     # -------------------------
     # DAY 3
     # -------------------------
-
     if DAY == "3":
 
         cat_url = "https://www.spc.noaa.gov/products/outlook/day3otlk_cat.nolyr.geojson"
@@ -238,7 +216,7 @@ def process_day(lat, lon, radius):
         any_r = analyze_risk(lat, lon, fetch_geojson(any_url), radius)
 
         result["category"] = cat["label"] or "None"
-        result["Any"] = str(any_r["label"])
+        result["any"] = any_r["label"]
 
         if cat["indicator"] == "Point" or any_r["indicator"] == "Point":
             result["indicator"] = "Point"
@@ -257,11 +235,10 @@ def process_day(lat, lon, radius):
     # -------------------------
     # DAY 4–8
     # -------------------------
-
     url = f"https://www.spc.noaa.gov/products/exper/day4-8/day{DAY}prob.nolyr.geojson"
     r = analyze_risk(lat, lon, fetch_geojson(url), radius)
 
-    result["Any"] = str(r["label"])
+    result["any"] = r["label"]
     result["indicator"] = r["indicator"]
     result["distance"] = r["distance"]
     result["direction"] = r["direction"]
@@ -295,25 +272,46 @@ def main():
 
         r = process_day(lat, lon, radius)
 
+        # -------------------------
+        # STRICT DAY SCOPING
+        # -------------------------
         day1 = day2 = day3 = day4 = day5 = day6 = day7 = day8 = ""
+
+        tornado = hail = wind = ""
 
         if DAY == "1":
             day1 = r.get("category", "")
+            tornado = r.get("tornado", "")
+            hail = r.get("hail", "")
+            wind = r.get("wind", "")
+
         elif DAY == "2":
             day2 = r.get("category", "")
-        elif DAY == "3":
-            day3 = r.get("Any", "")
-        elif DAY == "4":
-            day4 = r.get("Any", "")
-        elif DAY == "5":
-            day5 = r.get("Any", "")
-        elif DAY == "6":
-            day6 = r.get("Any", "")
-        elif DAY == "7":
-            day7 = r.get("Any", "")
-        elif DAY == "8":
-            day8 = r.get("Any", "")
+            tornado = r.get("tornado", "")
+            hail = r.get("hail", "")
+            wind = r.get("wind", "")
 
+        elif DAY == "3":
+            day3 = r.get("any", "")
+
+        elif DAY == "4":
+            day4 = r.get("any", "")
+
+        elif DAY == "5":
+            day5 = r.get("any", "")
+
+        elif DAY == "6":
+            day6 = r.get("any", "")
+
+        elif DAY == "7":
+            day7 = r.get("any", "")
+
+        elif DAY == "8":
+            day8 = r.get("any", "")
+
+        # -------------------------
+        # ROW BUILD
+        # -------------------------
         row = [
             timestamp,
             name,
@@ -336,17 +334,17 @@ def main():
             r["direction"],
 
             day1,
-            r["Tornado"],
-            r["Hail"],
-            r["Wind"],
+            tornado,
+            hail,
+            wind,
 
             day2,
-            r["Tornado"],
-            r["Hail"],
-            r["Wind"],
+            tornado,
+            hail,
+            wind,
 
             day3,
-            r["Any"],
+            r.get("any", ""),
 
             day4,
             day5,
