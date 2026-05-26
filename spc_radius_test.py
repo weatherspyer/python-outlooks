@@ -34,6 +34,22 @@ ISSUE = context.get("issue", "")
 
 
 # ==================================================
+# RISK MAP (FIXED OUTPUT STANDARDIZATION)
+# ==================================================
+
+RISK_MAP = {
+    "MRGL": "Marginal",
+    "SLGT": "Slight",
+    "ENH": "Enhanced",
+    "MDT": "Moderate",
+    "HIGH": "High",
+    "TSTM": "None",
+    None: "None",
+    "": "None"
+}
+
+
+# ==================================================
 # SHEETS
 # ==================================================
 
@@ -84,13 +100,17 @@ def calculate_direction(lat1, lon1, lat2, lon2):
     return dirs[round(bearing / 22.5) % 16]
 
 
+# ==================================================
+# CORE ANALYSIS
+# ==================================================
+
 def analyze_risk(lat, lon, geojson, radius_miles):
 
     point = Point(lon, lat)
     search_area = point.buffer(radius_miles / 69.0)
 
     best = {
-        "label": None,
+        "label": "None",
         "indicator": "None",
         "distance": "",
         "direction": ""
@@ -98,22 +118,25 @@ def analyze_risk(lat, lon, geojson, radius_miles):
 
     best_dn = -1
 
-    for f in geojson.get("features", []):
-        geom = f.get("geometry")
+    for feature in geojson.get("features", []):
+
+        geom = feature.get("geometry")
         if not geom or geom.get("type") == "GeometryCollection":
             continue
 
-        poly = shape(geom)
-        props = f.get("properties", {})
+        polygon = shape(geom)
+        props = feature.get("properties", {})
 
         raw = props.get("LABEL")
 
-        # normalize
-        label = "None" if raw in ["TSTM", None, ""] else raw
+        # ==================================================
+        # RISK NORMALIZATION (FIXED)
+        # ==================================================
+        label = RISK_MAP.get(raw, "None")
 
         dn = props.get("DN", 0)
 
-        if poly.contains(point):
+        if polygon.contains(point):
             if dn > best_dn:
                 best_dn = dn
                 best = {
@@ -123,10 +146,10 @@ def analyze_risk(lat, lon, geojson, radius_miles):
                     "direction": ""
                 }
 
-        elif poly.intersects(search_area):
+        elif polygon.intersects(search_area):
             if dn > best_dn:
                 best_dn = dn
-                nearest = nearest_points(point, poly)[1]
+                nearest = nearest_points(point, polygon)[1]
 
                 best = {
                     "label": label,
@@ -155,9 +178,12 @@ def process_day(lat, lon, radius):
         "direction": ""
     }
 
+    # -------------------------
+    # DAY 1 / 2
+    # -------------------------
     if DAY in ["1", "2"]:
 
-        urls = {
+        url_map = {
             "1": {
                 "Category": "https://www.spc.noaa.gov/products/outlook/day1otlk_cat.nolyr.geojson",
                 "Tornado": "https://www.spc.noaa.gov/products/outlook/day1otlk_torn.nolyr.geojson",
@@ -170,10 +196,12 @@ def process_day(lat, lon, radius):
                 "Hail": "https://www.spc.noaa.gov/products/outlook/day2otlk_hail.nolyr.geojson",
                 "Wind": "https://www.spc.noaa.gov/products/outlook/day2otlk_wind.nolyr.geojson"
             }
-        }[DAY]
+        }
+
+        urls = url_map[DAY]
 
         cat = analyze_risk(lat, lon, fetch_geojson(urls["Category"]), radius)
-        base["category"] = cat["label"] or "None"
+        base["category"] = cat["label"]
 
         if base["category"] == "None":
             base["tornado"] = "None"
@@ -193,6 +221,9 @@ def process_day(lat, lon, radius):
         return base
 
 
+    # -------------------------
+    # DAY 3
+    # -------------------------
     if DAY == "3":
 
         cat = analyze_risk(lat, lon, fetch_geojson(
@@ -203,7 +234,7 @@ def process_day(lat, lon, radius):
             "https://www.spc.noaa.gov/products/outlook/day3otlk_prob.nolyr.geojson"
         ), radius)
 
-        base["category"] = cat["label"] or "None"
+        base["category"] = cat["label"]
         base["any"] = any_r["label"]
 
         if cat["indicator"] == "Point" or any_r["indicator"] == "Point":
@@ -216,6 +247,9 @@ def process_day(lat, lon, radius):
         return base
 
 
+    # -------------------------
+    # DAY 4–8
+    # -------------------------
     url = f"https://www.spc.noaa.gov/products/exper/day4-8/day{DAY}prob.nolyr.geojson"
     r = analyze_risk(lat, lon, fetch_geojson(url), radius)
 
@@ -228,7 +262,7 @@ def process_day(lat, lon, radius):
 
 
 # ==================================================
-# MAIN (NO MORE COLUMN LOGIC BUGS)
+# MAIN (STRICT SINGLE DAY OUTPUT)
 # ==================================================
 
 def main():
@@ -252,37 +286,38 @@ def main():
         r = process_day(lat, lon, radius)
 
         # ==================================================
-        # SINGLE DAY SLOT SYSTEM (NO DUPLICATION POSSIBLE)
+        # SINGLE DAY SLOT ONLY (NO CROSS CONTAMINATION)
         # ==================================================
 
-        days = {str(i): "" for i in range(1, 9)}
-        t = h = w = ""
+        day = {str(i): "" for i in range(1, 9)}
+
+        tornado = hail = wind = ""
 
         if DAY == "1":
-            days["1"] = r["category"]
-            t, h, w = r["tornado"], r["hail"], r["wind"]
+            day["1"] = r["category"]
+            tornado, hail, wind = r["tornado"], r["hail"], r["wind"]
 
         elif DAY == "2":
-            days["2"] = r["category"]
-            t, h, w = r["tornado"], r["hail"], r["wind"]
+            day["2"] = r["category"]
+            tornado, hail, wind = r["tornado"], r["hail"], r["wind"]
 
         elif DAY == "3":
-            days["3"] = r["any"]
+            day["3"] = r["any"]
 
         elif DAY == "4":
-            days["4"] = r["any"]
+            day["4"] = r["any"]
 
         elif DAY == "5":
-            days["5"] = r["any"]
+            day["5"] = r["any"]
 
         elif DAY == "6":
-            days["6"] = r["any"]
+            day["6"] = r["any"]
 
         elif DAY == "7":
-            days["7"] = r["any"]
+            day["7"] = r["any"]
 
         elif DAY == "8":
-            days["8"] = r["any"]
+            day["8"] = r["any"]
 
         row = [
             timestamp,
@@ -305,24 +340,24 @@ def main():
             r["distance"],
             r["direction"],
 
-            days["1"],
-            t if DAY == "1" else "",
-            h if DAY == "1" else "",
-            w if DAY == "1" else "",
+            day["1"],
+            tornado if DAY == "1" else "",
+            hail if DAY == "1" else "",
+            wind if DAY == "1" else "",
 
-            days["2"],
-            t if DAY == "2" else "",
-            h if DAY == "2" else "",
-            w if DAY == "2" else "",
+            day["2"],
+            tornado if DAY == "2" else "",
+            hail if DAY == "2" else "",
+            wind if DAY == "2" else "",
 
-            days["3"],
+            day["3"],
             r.get("any", ""),
 
-            days["4"],
-            days["5"],
-            days["6"],
-            days["7"],
-            days["8"]
+            day["4"],
+            day["5"],
+            day["6"],
+            day["7"],
+            day["8"]
         ]
 
         sheet.insert_row(row, 2)
