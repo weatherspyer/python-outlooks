@@ -21,7 +21,6 @@ from google.oauth2.service_account import Credentials
 if len(sys.argv) < 2:
     raise ValueError("Missing JSON payload argument")
 
-
 payload = json.loads(sys.argv[1])
 
 context = payload.get("context", {})
@@ -34,7 +33,7 @@ ISSUE = context.get("issue", "")
 
 
 # ==================================================
-# RISK MAP (FIXED OUTPUT STANDARDIZATION)
+# RISK MAP (ONLY FOR CATEGORY)
 # ==================================================
 
 RISK_MAP = {
@@ -101,7 +100,7 @@ def calculate_direction(lat1, lon1, lat2, lon2):
 
 
 # ==================================================
-# CORE ANALYSIS
+# CORE ANALYSIS (RAW OUTPUT ONLY)
 # ==================================================
 
 def analyze_risk(lat, lon, geojson, radius_miles):
@@ -110,7 +109,7 @@ def analyze_risk(lat, lon, geojson, radius_miles):
     search_area = point.buffer(radius_miles / 69.0)
 
     best = {
-        "label": "None",
+        "label": None,
         "indicator": "None",
         "distance": "",
         "direction": ""
@@ -128,13 +127,10 @@ def analyze_risk(lat, lon, geojson, radius_miles):
         props = feature.get("properties", {})
 
         raw = props.get("LABEL")
-
-        # ==================================================
-        # RISK NORMALIZATION (FIXED)
-        # ==================================================
-        label = RISK_MAP.get(raw, "None")
-
         dn = props.get("DN", 0)
+
+        # NO MAPPING HERE (IMPORTANT)
+        label = raw
 
         if polygon.contains(point):
             if dn > best_dn:
@@ -196,13 +192,18 @@ def process_day(lat, lon, radius):
                 "Hail": "https://www.spc.noaa.gov/products/outlook/day2otlk_hail.nolyr.geojson",
                 "Wind": "https://www.spc.noaa.gov/products/outlook/day2otlk_wind.nolyr.geojson"
             }
-        }
+        }[DAY]
 
-        urls = url_map[DAY]
+        cat = analyze_risk(lat, lon, fetch_geojson(url_map["Category"]), radius)
 
-        cat = analyze_risk(lat, lon, fetch_geojson(urls["Category"]), radius)
-        base["category"] = cat["label"]
+        # =========================
+        # CATEGORY (ONLY PLACE WE MAP)
+        # =========================
+        base["category"] = RISK_MAP.get(cat["label"], "None")
 
+        # =========================
+        # HARD RULE: CATEGORY = None
+        # =========================
         if base["category"] == "None":
             base["tornado"] = "None"
             base["hail"] = "None"
@@ -210,9 +211,12 @@ def process_day(lat, lon, radius):
             base["indicator"] = "None"
             return base
 
-        base["tornado"] = analyze_risk(lat, lon, fetch_geojson(urls["Tornado"]), radius)["label"]
-        base["hail"] = analyze_risk(lat, lon, fetch_geojson(urls["Hail"]), radius)["label"]
-        base["wind"] = analyze_risk(lat, lon, fetch_geojson(urls["Wind"]), radius)["label"]
+        # =========================
+        # RAW PROBABILITY LAYERS
+        # =========================
+        base["tornado"] = analyze_risk(lat, lon, fetch_geojson(url_map["Tornado"]), radius)["label"]
+        base["hail"] = analyze_risk(lat, lon, fetch_geojson(url_map["Hail"]), radius)["label"]
+        base["wind"] = analyze_risk(lat, lon, fetch_geojson(url_map["Wind"]), radius)["label"]
 
         base["indicator"] = cat["indicator"]
         base["distance"] = cat["distance"]
@@ -234,7 +238,7 @@ def process_day(lat, lon, radius):
             "https://www.spc.noaa.gov/products/outlook/day3otlk_prob.nolyr.geojson"
         ), radius)
 
-        base["category"] = cat["label"]
+        base["category"] = RISK_MAP.get(cat["label"], "None")
         base["any"] = any_r["label"]
 
         if cat["indicator"] == "Point" or any_r["indicator"] == "Point":
@@ -262,7 +266,7 @@ def process_day(lat, lon, radius):
 
 
 # ==================================================
-# MAIN (STRICT SINGLE DAY OUTPUT)
+# MAIN (STRICT SINGLE DAY WRITE)
 # ==================================================
 
 def main():
@@ -286,38 +290,38 @@ def main():
         r = process_day(lat, lon, radius)
 
         # ==================================================
-        # SINGLE DAY SLOT ONLY (NO CROSS CONTAMINATION)
+        # ONLY ONE DAY BLOCK IS EVER FILLED
         # ==================================================
 
-        day = {str(i): "" for i in range(1, 9)}
+        day1 = day2 = day3 = day4 = day5 = day6 = day7 = day8 = ""
 
         tornado = hail = wind = ""
 
         if DAY == "1":
-            day["1"] = r["category"]
+            day1 = r["category"]
             tornado, hail, wind = r["tornado"], r["hail"], r["wind"]
 
         elif DAY == "2":
-            day["2"] = r["category"]
+            day2 = r["category"]
             tornado, hail, wind = r["tornado"], r["hail"], r["wind"]
 
         elif DAY == "3":
-            day["3"] = r["any"]
+            day3 = r["any"]
 
         elif DAY == "4":
-            day["4"] = r["any"]
+            day4 = r["any"]
 
         elif DAY == "5":
-            day["5"] = r["any"]
+            day5 = r["any"]
 
         elif DAY == "6":
-            day["6"] = r["any"]
+            day6 = r["any"]
 
         elif DAY == "7":
-            day["7"] = r["any"]
+            day7 = r["any"]
 
         elif DAY == "8":
-            day["8"] = r["any"]
+            day8 = r["any"]
 
         row = [
             timestamp,
@@ -340,24 +344,24 @@ def main():
             r["distance"],
             r["direction"],
 
-            day["1"],
+            day1,
             tornado if DAY == "1" else "",
             hail if DAY == "1" else "",
             wind if DAY == "1" else "",
 
-            day["2"],
+            day2,
             tornado if DAY == "2" else "",
             hail if DAY == "2" else "",
             wind if DAY == "2" else "",
 
-            day["3"],
+            day3,
             r.get("any", ""),
 
-            day["4"],
-            day["5"],
-            day["6"],
-            day["7"],
-            day["8"]
+            day4,
+            day5,
+            day6,
+            day7,
+            day8
         ]
 
         sheet.insert_row(row, 2)
