@@ -191,9 +191,7 @@ def process_day(lat, lon, radius):
         cat = analyze_risk(lat, lon, fetch_geojson(urls["Category"]), radius)
         result["category"] = cat["label"] or "None"
 
-        hazards = ["Tornado", "Hail", "Wind"]
-
-        for h in hazards:
+        for h in ["Tornado", "Hail", "Wind"]:
             r = analyze_risk(lat, lon, fetch_geojson(urls[h]), radius)
             result[h.lower()] = r["label"]
 
@@ -272,46 +270,57 @@ def main():
 
         r = process_day(lat, lon, radius)
 
-        # -------------------------
-        # STRICT DAY SCOPING
-        # -------------------------
-        day1 = day2 = day3 = day4 = day5 = day6 = day7 = day8 = ""
-
-        tornado = hail = wind = ""
+        # ==================================================
+        # STRUCTURED OUTPUT (NO CROSS-DAY BLEED)
+        # ==================================================
+        output = {
+            "day1": "",
+            "day2": "",
+            "day3": "",
+            "day4": "",
+            "day5": "",
+            "day6": "",
+            "day7": "",
+            "day8": "",
+            "tornado": "",
+            "hail": "",
+            "wind": "",
+            "any": ""
+        }
 
         if DAY == "1":
-            day1 = r.get("category", "")
-            tornado = r.get("tornado", "")
-            hail = r.get("hail", "")
-            wind = r.get("wind", "")
+            output["day1"] = r.get("category", "")
+            output["tornado"] = r.get("tornado", "")
+            output["hail"] = r.get("hail", "")
+            output["wind"] = r.get("wind", "")
 
         elif DAY == "2":
-            day2 = r.get("category", "")
-            tornado = r.get("tornado", "")
-            hail = r.get("hail", "")
-            wind = r.get("wind", "")
+            output["day2"] = r.get("category", "")
+            output["tornado"] = r.get("tornado", "")
+            output["hail"] = r.get("hail", "")
+            output["wind"] = r.get("wind", "")
 
         elif DAY == "3":
-            day3 = r.get("any", "")
+            output["day3"] = r.get("any", "")
 
         elif DAY == "4":
-            day4 = r.get("any", "")
+            output["day4"] = r.get("any", "")
 
         elif DAY == "5":
-            day5 = r.get("any", "")
+            output["day5"] = r.get("any", "")
 
         elif DAY == "6":
-            day6 = r.get("any", "")
+            output["day6"] = r.get("any", "")
 
         elif DAY == "7":
-            day7 = r.get("any", "")
+            output["day7"] = r.get("any", "")
 
         elif DAY == "8":
-            day8 = r.get("any", "")
+            output["day8"] = r.get("any", "")
 
-        # -------------------------
+        # ==================================================
         # ROW BUILD
-        # -------------------------
+        # ==================================================
         row = [
             timestamp,
             name,
@@ -333,24 +342,24 @@ def main():
             r["distance"],
             r["direction"],
 
-            day1,
-            tornado,
-            hail,
-            wind,
+            output["day1"],
+            output["tornado"],
+            output["hail"],
+            output["wind"],
 
-            day2,
-            tornado,
-            hail,
-            wind,
+            output["day2"],
+            output["tornado"],
+            output["hail"],
+            output["wind"],
 
-            day3,
+            output["day3"],
             r.get("any", ""),
 
-            day4,
-            day5,
-            day6,
-            day7,
-            day8
+            output["day4"],
+            output["day5"],
+            output["day6"],
+            output["day7"],
+            output["day8"]
         ]
 
         sheet.insert_row(row, 2)
