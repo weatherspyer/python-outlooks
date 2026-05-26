@@ -293,30 +293,33 @@ if __name__ == "__main__":
     # -----------------------------
     # Webhook trigger (AFTER ALL PROCESSING)
     # -----------------------------
-
-    script_url = os.environ.get("GOOGLE_SHEETS_WEBHOOK_API_URL_ID")
+    
+    import os
+    
+    script_id = os.environ.get("GOOGLE_SHEETS_WEBHOOK_API_URL_ID")
     api_key = os.environ.get("GOOGLE_SHEETS_WEBHOOK_API_KEY")
-
+    
+    script_url = f"https://script.google.com/macros/s/{script_id}/exec" if script_id else None
+    
     if not script_url:
         print("⚠️ Missing GOOGLE_SHEETS_WEBHOOK_API_URL_ID")
-
+    
     elif not api_key:
         print("⚠️ Missing GOOGLE_SHEETS_WEBHOOK_API_KEY")
-
+    
     else:
-
+    
         try:
-
             response = requests.get(
                 script_url,
                 params={"key": api_key},
                 timeout=30
             )
-
+    
             if response.status_code == 200:
                 print("📡 Webhook triggered successfully.")
             else:
                 print(f"⚠️ Webhook failed: {response.status_code}")
-
+    
         except Exception as e:
             print(f"🚨 Webhook error: {e}")
