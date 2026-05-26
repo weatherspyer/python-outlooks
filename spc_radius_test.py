@@ -33,7 +33,7 @@ ISSUE = context.get("issue", "")
 
 
 # ==================================================
-# RISK MAP
+# RISK MAP (NO BLANK STATES)
 # ==================================================
 
 RISK_MAP = {
@@ -42,9 +42,9 @@ RISK_MAP = {
     "ENH": "Enhanced",
     "MDT": "Moderate",
     "HIGH": "High",
-    "TSTM": "",
-    None: "",
-    "": ""
+    "TSTM": "None",
+    None: "None",
+    "": "None"
 }
 
 
@@ -121,8 +121,8 @@ def analyze_risk(lat, lon, geojson, radius_miles):
     search_area = point.buffer(radius_miles / 69.0)
 
     best = {
-        "label": None,
-        "indicator": "",
+        "label": "None",
+        "indicator": "None",
         "distance": "",
         "direction": ""
     }
@@ -138,7 +138,7 @@ def analyze_risk(lat, lon, geojson, radius_miles):
         props = feature.get("properties", {})
         raw = props.get("LABEL")
 
-        # ❌ HARD IGNORE TSTM HERE
+        # ❌ HARD SKIP TSTM
         if raw == "TSTM":
             continue
 
@@ -177,12 +177,12 @@ def analyze_risk(lat, lon, geojson, radius_miles):
 def process_day(lat, lon, radius):
 
     base = {
-        "category": "",
-        "tornado": "",
-        "hail": "",
-        "wind": "",
-        "any": "",
-        "indicator": "",
+        "category": "None",
+        "tornado": "None",
+        "hail": "None",
+        "wind": "None",
+        "any": "None",
+        "indicator": "None",
         "distance": "",
         "direction": ""
     }
@@ -209,13 +209,11 @@ def process_day(lat, lon, radius):
 
         cat = analyze_risk(lat, lon, fetch_geojson(url_map["Category"]), radius)
 
-        raw_label = cat["label"]
+        base["category"] = RISK_MAP.get(cat["label"], "None")
 
-        # 🚨 TSTM = COMPLETE IGNORE
-        if raw_label in ["TSTM", None, ""]:
+        if base["category"] == "None":
+            base["indicator"] = "None"
             return base
-
-        base["category"] = RISK_MAP.get(raw_label, "")
 
         base["tornado"] = to_percent(
             analyze_risk(lat, lon, fetch_geojson(url_map["Tornado"]), radius)["label"]
@@ -227,7 +225,7 @@ def process_day(lat, lon, radius):
             analyze_risk(lat, lon, fetch_geojson(url_map["Wind"]), radius)["label"]
         )
 
-        base["indicator"] = cat["indicator"]
+        base["indicator"] = cat["indicator"] if cat["indicator"] in ["Point", "Radius"] else "None"
         base["distance"] = cat["distance"]
         base["direction"] = cat["direction"]
 
@@ -247,15 +245,14 @@ def process_day(lat, lon, radius):
             "https://www.spc.noaa.gov/products/outlook/day3otlk_prob.nolyr.geojson"
         ), radius)
 
-        raw_label = cat["label"]
-
-        if raw_label in ["TSTM", None, ""]:
-            return base
-
-        base["category"] = RISK_MAP.get(raw_label, "")
+        base["category"] = RISK_MAP.get(cat["label"], "None")
         base["any"] = to_percent(any_r["label"])
 
-        base["indicator"] = cat["indicator"]
+        if base["category"] == "None":
+            base["indicator"] = "None"
+            return base
+
+        base["indicator"] = cat["indicator"] if cat["indicator"] in ["Point", "Radius"] else "None"
         base["distance"] = cat["distance"]
         base["direction"] = cat["direction"]
 
@@ -269,7 +266,7 @@ def process_day(lat, lon, radius):
     r = analyze_risk(lat, lon, fetch_geojson(url), radius)
 
     base["any"] = to_percent(r["label"])
-    base["indicator"] = r["indicator"]
+    base["indicator"] = r["indicator"] if r["indicator"] in ["Point", "Radius"] else "None"
     base["distance"] = r["distance"]
     base["direction"] = r["direction"]
 
