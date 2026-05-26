@@ -33,7 +33,7 @@ ISSUE = context.get("issue", "")
 
 
 # ==================================================
-# CATEGORY MAP ONLY
+# RISK MAP
 # ==================================================
 
 RISK_MAP = {
@@ -42,21 +42,15 @@ RISK_MAP = {
     "ENH": "Enhanced",
     "MDT": "Moderate",
     "HIGH": "High",
-    "TSTM": "None",
-    None: "None",
-    "": "None"
+    "TSTM": "",
+    None: "",
+    "": ""
 }
 
 
 # ==================================================
 # HELPERS
 # ==================================================
-
-def safe(value):
-    if value in [None, ""]:
-        return "None"
-    return value
-
 
 def to_percent(value):
     if value in [None, ""]:
@@ -69,28 +63,6 @@ def to_percent(value):
     except:
         return "None"
 
-
-# ==================================================
-# SHEETS
-# ==================================================
-
-SHEET_ID = "1HSLnDqg243qkgVJb7tpsnKLEDiaLFM0cCLwU5LQndsg"
-SHEET_NAME = "Log"
-
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
-
-
-def get_sheet():
-    creds = Credentials.from_service_account_file(
-        "credentials.json",
-        scopes=SCOPES
-    )
-    return gspread.authorize(creds).open_by_key(SHEET_ID).worksheet(SHEET_NAME)
-
-
-# ==================================================
-# HELPERS
-# ==================================================
 
 def fetch_geojson(url):
     r = requests.get(url, timeout=30)
@@ -122,7 +94,25 @@ def calculate_direction(lat1, lon1, lat2, lon2):
 
 
 # ==================================================
-# CORE ANALYSIS (RAW ONLY)
+# SHEETS
+# ==================================================
+
+SHEET_ID = "1HSLnDqg243qkgVJb7tpsnKLEDiaLFM0cCLwU5LQndsg"
+SHEET_NAME = "Log"
+
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+
+
+def get_sheet():
+    creds = Credentials.from_service_account_file(
+        "credentials.json",
+        scopes=SCOPES
+    )
+    return gspread.authorize(creds).open_by_key(SHEET_ID).worksheet(SHEET_NAME)
+
+
+# ==================================================
+# ANALYSIS
 # ==================================================
 
 def analyze_risk(lat, lon, geojson, radius_miles):
@@ -132,7 +122,7 @@ def analyze_risk(lat, lon, geojson, radius_miles):
 
     best = {
         "label": None,
-        "indicator": "None",
+        "indicator": "",
         "distance": "",
         "direction": ""
     }
@@ -145,10 +135,14 @@ def analyze_risk(lat, lon, geojson, radius_miles):
         if not geom or geom.get("type") == "GeometryCollection":
             continue
 
-        polygon = shape(geom)
         props = feature.get("properties", {})
-
         raw = props.get("LABEL")
+
+        # ❌ HARD IGNORE TSTM HERE
+        if raw == "TSTM":
+            continue
+
+        polygon = shape(geom)
         dn = props.get("DN", 0)
 
         if polygon.contains(point):
@@ -188,7 +182,7 @@ def process_day(lat, lon, radius):
         "hail": "",
         "wind": "",
         "any": "",
-        "indicator": "None",
+        "indicator": "",
         "distance": "",
         "direction": ""
     }
@@ -215,18 +209,23 @@ def process_day(lat, lon, radius):
 
         cat = analyze_risk(lat, lon, fetch_geojson(url_map["Category"]), radius)
 
-        base["category"] = RISK_MAP.get(cat["label"], "None")
+        raw_label = cat["label"]
 
-        if base["category"] == "None":
-            base["tornado"] = "None"
-            base["hail"] = "None"
-            base["wind"] = "None"
-            base["indicator"] = "None"
+        # 🚨 TSTM = COMPLETE IGNORE
+        if raw_label in ["TSTM", None, ""]:
             return base
 
-        base["tornado"] = to_percent(analyze_risk(lat, lon, fetch_geojson(url_map["Tornado"]), radius)["label"])
-        base["hail"] = to_percent(analyze_risk(lat, lon, fetch_geojson(url_map["Hail"]), radius)["label"])
-        base["wind"] = to_percent(analyze_risk(lat, lon, fetch_geojson(url_map["Wind"]), radius)["label"])
+        base["category"] = RISK_MAP.get(raw_label, "")
+
+        base["tornado"] = to_percent(
+            analyze_risk(lat, lon, fetch_geojson(url_map["Tornado"]), radius)["label"]
+        )
+        base["hail"] = to_percent(
+            analyze_risk(lat, lon, fetch_geojson(url_map["Hail"]), radius)["label"]
+        )
+        base["wind"] = to_percent(
+            analyze_risk(lat, lon, fetch_geojson(url_map["Wind"]), radius)["label"]
+        )
 
         base["indicator"] = cat["indicator"]
         base["distance"] = cat["distance"]
@@ -236,7 +235,7 @@ def process_day(lat, lon, radius):
 
 
     # -------------------------
-    # DAY 3 (FIXED PROPERLY)
+    # DAY 3
     # -------------------------
     if DAY == "3":
 
@@ -248,19 +247,17 @@ def process_day(lat, lon, radius):
             "https://www.spc.noaa.gov/products/outlook/day3otlk_prob.nolyr.geojson"
         ), radius)
 
-        base["category"] = RISK_MAP.get(cat["label"], "None")
+        raw_label = cat["label"]
 
-        # IMPORTANT FIX:
-        # Day 3 Risk = CATEGORY (NOT probability)
-        # Any Risk = probability (formatted)
+        if raw_label in ["TSTM", None, ""]:
+            return base
+
+        base["category"] = RISK_MAP.get(raw_label, "")
         base["any"] = to_percent(any_r["label"])
 
-        if cat["indicator"] == "Point" or any_r["indicator"] == "Point":
-            base["indicator"] = "Point"
-        elif cat["indicator"] == "Radius":
-            base["indicator"] = "Radius"
-            base["distance"] = cat["distance"]
-            base["direction"] = cat["direction"]
+        base["indicator"] = cat["indicator"]
+        base["distance"] = cat["distance"]
+        base["direction"] = cat["direction"]
 
         return base
 
@@ -320,16 +317,12 @@ def main():
 
         elif DAY == "4":
             day["4"] = r["any"]
-
         elif DAY == "5":
             day["5"] = r["any"]
-
         elif DAY == "6":
             day["6"] = r["any"]
-
         elif DAY == "7":
             day["7"] = r["any"]
-
         elif DAY == "8":
             day["8"] = r["any"]
 
