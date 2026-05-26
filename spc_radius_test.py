@@ -33,7 +33,7 @@ ISSUE = context.get("issue", "")
 
 
 # ==================================================
-# RISK MAP (CATEGORY ONLY)
+# CATEGORY RISK MAP (ONLY CATEGORY)
 # ==================================================
 
 RISK_MAP = {
@@ -48,10 +48,27 @@ RISK_MAP = {
 }
 
 
+# ==================================================
+# HELPERS
+# ==================================================
+
 def safe(value):
     if value in [None, ""]:
         return "None"
     return value
+
+
+def to_percent(value):
+    if value in [None, ""]:
+        return "None"
+
+    try:
+        v = float(value)
+        if v == 0:
+            return "None"
+        return f"{round(v * 100)}%"
+    except:
+        return "None"
 
 
 # ==================================================
@@ -106,7 +123,7 @@ def calculate_direction(lat1, lon1, lat2, lon2):
 
 
 # ==================================================
-# CORE ANALYSIS
+# CORE ANALYSIS (RAW ONLY)
 # ==================================================
 
 def analyze_risk(lat, lon, geojson, radius_miles):
@@ -135,7 +152,7 @@ def analyze_risk(lat, lon, geojson, radius_miles):
         raw = props.get("LABEL")
         dn = props.get("DN", 0)
 
-        label = raw  # RAW ONLY (no mapping here)
+        label = raw  # KEEP RAW
 
         if polygon.contains(point):
             if dn > best_dn:
@@ -201,10 +218,10 @@ def process_day(lat, lon, radius):
 
         cat = analyze_risk(lat, lon, fetch_geojson(url_map["Category"]), radius)
 
-        # CATEGORY (ONLY MAPPED FIELD)
+        # CATEGORY ONLY FORMATTED
         base["category"] = RISK_MAP.get(cat["label"], "None")
 
-        # HARD RULE: if no category → all hazards None
+        # IF NO CATEGORY → FORCE ALL NONE
         if base["category"] == "None":
             base["tornado"] = "None"
             base["hail"] = "None"
@@ -212,10 +229,10 @@ def process_day(lat, lon, radius):
             base["indicator"] = "None"
             return base
 
-        # HAZARDS (RAW + SAFE FILL)
-        base["tornado"] = safe(analyze_risk(lat, lon, fetch_geojson(url_map["Tornado"]), radius)["label"])
-        base["hail"] = safe(analyze_risk(lat, lon, fetch_geojson(url_map["Hail"]), radius)["label"])
-        base["wind"] = safe(analyze_risk(lat, lon, fetch_geojson(url_map["Wind"]), radius)["label"])
+        # HAZARDS → PERCENT FORMAT
+        base["tornado"] = to_percent(analyze_risk(lat, lon, fetch_geojson(url_map["Tornado"]), radius)["label"])
+        base["hail"] = to_percent(analyze_risk(lat, lon, fetch_geojson(url_map["Hail"]), radius)["label"])
+        base["wind"] = to_percent(analyze_risk(lat, lon, fetch_geojson(url_map["Wind"]), radius)["label"])
 
         base["indicator"] = cat["indicator"]
         base["distance"] = cat["distance"]
