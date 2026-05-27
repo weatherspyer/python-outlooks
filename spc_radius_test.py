@@ -129,10 +129,10 @@ def analyze(lat, lon, geojson, radius):
 
 
 # ==================================================
-# PROCESS DAY
+# PROCESS SINGLE DAY
 # ==================================================
 
-def process_day(lat, lon, radius):
+def process_day(lat, lon, radius, day):
 
     base = {
         "category": "None",
@@ -146,7 +146,7 @@ def process_day(lat, lon, radius):
     }
 
     # ---------------- DAY 1 ----------------
-    if DAY == "1":
+    if day == "1":
 
         cat = analyze(lat, lon, fetch("https://www.spc.noaa.gov/products/outlook/day1otlk_cat.nolyr.geojson"), radius)
 
@@ -163,7 +163,7 @@ def process_day(lat, lon, radius):
 
 
     # ---------------- DAY 2 ----------------
-    if DAY == "2":
+    if day == "2":
 
         cat = analyze(lat, lon, fetch("https://www.spc.noaa.gov/products/outlook/day2otlk_cat.nolyr.geojson"), radius)
 
@@ -180,7 +180,7 @@ def process_day(lat, lon, radius):
 
 
     # ---------------- DAY 3 ----------------
-    if DAY == "3":
+    if day == "3":
 
         cat = analyze(lat, lon, fetch("https://www.spc.noaa.gov/products/outlook/day3otlk_cat.nolyr.geojson"), radius)
         any_r = analyze(lat, lon, fetch("https://www.spc.noaa.gov/products/outlook/day3otlk_prob.nolyr.geojson"), radius)
@@ -194,20 +194,14 @@ def process_day(lat, lon, radius):
         return base
 
 
-    # ---------------- DAY 4–8 (FIXED) ----------------
-    if DAY in ["4", "5", "6", "7", "8"]:
+    # ---------------- DAY 4–8 (single day mode fallback) ----------------
+    url = f"https://www.spc.noaa.gov/products/exper/day4-8/day{day}prob.nolyr.geojson"
+    geo = fetch(url)
 
-        url = f"https://www.spc.noaa.gov/products/exper/day4-8/day{DAY}prob.nolyr.geojson"
-        geo = fetch(url)
+    r = analyze(lat, lon, geo, radius)
 
-        r = analyze(lat, lon, geo, radius)
-
-        base["any"] = to_percent(r["label"])
-        base.update(r)
-
-        return base
-
-
+    base["any"] = to_percent(r["label"])
+    base.update(r)
     return base
 
 
@@ -230,12 +224,81 @@ def main():
         ZoneInfo("America/New_York")
     ).strftime("%m/%d/%Y %H:%M")
 
+    # ==================================================
+    # DAY 4 SPECIAL MODE (EXPANDS INTO 4–8)
+    # ==================================================
+
+    if DAY == "4":
+
+        for d in ["4", "5", "6", "7", "8"]:
+
+            for loc in locations:
+
+                r = process_day(
+                    float(loc["lat"]),
+                    float(loc["lon"]),
+                    float(loc["radius"]),
+                    d
+                )
+
+                row = [
+                    timestamp,
+                    loc["name"],
+                    loc["wfo"],
+                    OUTLOOK_TYPE,
+                    OUTLOOK_SOURCE,
+                    d,
+                    ISSUE,
+
+                    "", "", "", "",
+                    loc.get("region",""),
+                    "", "",
+
+                    "NEW",
+
+                    r["indicator"],
+                    r["distance"],
+                    r["direction"],
+
+                    r["category"] if d == "1" else "",
+                    r["tornado"] if d == "1" else "",
+                    r["hail"] if d == "1" else "",
+                    r["wind"] if d == "1" else "",
+
+                    r["category"] if d == "2" else "",
+                    r["tornado"] if d == "2" else "",
+                    r["hail"] if d == "2" else "",
+                    r["wind"] if d == "2" else "",
+
+                    r["category"] if d == "3" else "",
+                    r["any"] if d == "3" else "",
+
+                    r["any"] if d == "4" else "",
+                    r["any"] if d == "5" else "",
+                    r["any"] if d == "6" else "",
+                    r["any"] if d == "7" else "",
+                    r["any"] if d == "8" else "",
+                ]
+
+                sheet.insert_row(row, 2, value_input_option="USER_ENTERED")
+
+                print(f"Inserted {loc['name']} Day {d}")
+
+        print("Done.")
+        return
+
+
+    # ==================================================
+    # NORMAL MODE (1–3)
+    # ==================================================
+
     for loc in locations:
 
         r = process_day(
             float(loc["lat"]),
             float(loc["lon"]),
-            float(loc["radius"])
+            float(loc["radius"]),
+            DAY
         )
 
         row = [
