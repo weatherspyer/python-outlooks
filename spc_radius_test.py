@@ -152,7 +152,7 @@ def load_spc_1_3(day):
 
 def load_spc_4_8():
     for d in range(4, 9):
-        SPC_BY_DAY[d] = fetch(
+        SPC_BY_DAY[str(d)] = fetch(
             f"https://www.spc.noaa.gov/products/exper/day4-8/day{d}prob.nolyr.geojson"
         )
 
