@@ -9,6 +9,7 @@ import os
 
 from shapely.geometry import shape, Point
 from shapely.ops import nearest_points
+
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from google.oauth2.service_account import Credentials
@@ -22,7 +23,7 @@ payload = json.loads(sys.argv[1])
 context = payload.get("context", {})
 locations = payload.get("locations", [])
 
-DAY_INPUT = str(context.get("day", ""))
+DAY = str(context.get("day", ""))
 OUTLOOK_TYPE = context.get("outlook_type", "")
 OUTLOOK_SOURCE = context.get("outlook_source", "")
 ISSUE = context.get("issue", "")
@@ -100,6 +101,7 @@ def analyze(lat, lon, geojson, radius):
             continue
 
         label = f.get("properties", {}).get("LABEL")
+
         if label == "TSTM":
             continue
 
@@ -127,41 +129,10 @@ def analyze(lat, lon, geojson, radius):
 
 
 # ==================================================
-# SPC CACHE
-# ==================================================
-
-SPC_BY_DAY = {}
-
-def load_spc_1_3(day):
-    if day == "1":
-        SPC_BY_DAY["cat"] = fetch("https://www.spc.noaa.gov/products/outlook/day1otlk_cat.nolyr.geojson")
-        SPC_BY_DAY["torn"] = fetch("https://www.spc.noaa.gov/products/outlook/day1otlk_torn.nolyr.geojson")
-        SPC_BY_DAY["hail"] = fetch("https://www.spc.noaa.gov/products/outlook/day1otlk_hail.nolyr.geojson")
-        SPC_BY_DAY["wind"] = fetch("https://www.spc.noaa.gov/products/outlook/day1otlk_wind.nolyr.geojson")
-
-    elif day == "2":
-        SPC_BY_DAY["cat"] = fetch("https://www.spc.noaa.gov/products/outlook/day2otlk_cat.nolyr.geojson")
-        SPC_BY_DAY["torn"] = fetch("https://www.spc.noaa.gov/products/outlook/day2otlk_torn.nolyr.geojson")
-        SPC_BY_DAY["hail"] = fetch("https://www.spc.noaa.gov/products/outlook/day2otlk_hail.nolyr.geojson")
-        SPC_BY_DAY["wind"] = fetch("https://www.spc.noaa.gov/products/outlook/day2otlk_wind.nolyr.geojson")
-
-    elif day == "3":
-        SPC_BY_DAY["cat"] = fetch("https://www.spc.noaa.gov/products/outlook/day3otlk_cat.nolyr.geojson")
-        SPC_BY_DAY["prob"] = fetch("https://www.spc.noaa.gov/products/outlook/day3otlk_prob.nolyr.geojson")
-
-
-def load_spc_4_8():
-    for d in range(4, 9):
-        SPC_BY_DAY[str(d)] = fetch(
-            f"https://www.spc.noaa.gov/products/exper/day4-8/day{d}prob.nolyr.geojson"
-        )
-
-
-# ==================================================
 # PROCESS DAY
 # ==================================================
 
-def process_day(day, lat, lon, radius):
+def process_day(lat, lon, radius):
 
     base = {
         "category": "None",
@@ -174,40 +145,45 @@ def process_day(day, lat, lon, radius):
         "direction": ""
     }
 
-    if day == "1":
+    # ---------------- DAY 1 ----------------
+    if DAY == "1":
 
-        cat = analyze(lat, lon, SPC_BY_DAY["cat"], radius)
-
-        base["category"] = RISK_MAP.get(cat["label"], "None")
-        if base["category"] == "None":
-            return base
-
-        base["tornado"] = to_percent(analyze(lat, lon, SPC_BY_DAY["torn"], radius)["label"])
-        base["hail"] = to_percent(analyze(lat, lon, SPC_BY_DAY["hail"], radius)["label"])
-        base["wind"] = to_percent(analyze(lat, lon, SPC_BY_DAY["wind"], radius)["label"])
-
-        base.update(cat)
-        return base
-
-    if day == "2":
-
-        cat = analyze(lat, lon, SPC_BY_DAY["cat"], radius)
+        cat = analyze(lat, lon, fetch("https://www.spc.noaa.gov/products/outlook/day1otlk_cat.nolyr.geojson"), radius)
 
         base["category"] = RISK_MAP.get(cat["label"], "None")
         if base["category"] == "None":
             return base
 
-        base["tornado"] = to_percent(analyze(lat, lon, SPC_BY_DAY["torn"], radius)["label"])
-        base["hail"] = to_percent(analyze(lat, lon, SPC_BY_DAY["hail"], radius)["label"])
-        base["wind"] = to_percent(analyze(lat, lon, SPC_BY_DAY["wind"], radius)["label"])
+        base["tornado"] = to_percent(analyze(lat, lon, fetch("https://www.spc.noaa.gov/products/outlook/day1otlk_torn.nolyr.geojson"), radius)["label"])
+        base["hail"] = to_percent(analyze(lat, lon, fetch("https://www.spc.noaa.gov/products/outlook/day1otlk_hail.nolyr.geojson"), radius)["label"])
+        base["wind"] = to_percent(analyze(lat, lon, fetch("https://www.spc.noaa.gov/products/outlook/day1otlk_wind.nolyr.geojson"), radius)["label"])
 
         base.update(cat)
         return base
 
-    if day == "3":
 
-        cat = analyze(lat, lon, SPC_BY_DAY["cat"], radius)
-        any_r = analyze(lat, lon, SPC_BY_DAY["prob"], radius)
+    # ---------------- DAY 2 ----------------
+    if DAY == "2":
+
+        cat = analyze(lat, lon, fetch("https://www.spc.noaa.gov/products/outlook/day2otlk_cat.nolyr.geojson"), radius)
+
+        base["category"] = RISK_MAP.get(cat["label"], "None")
+        if base["category"] == "None":
+            return base
+
+        base["tornado"] = to_percent(analyze(lat, lon, fetch("https://www.spc.noaa.gov/products/outlook/day2otlk_torn.nolyr.geojson"), radius)["label"])
+        base["hail"] = to_percent(analyze(lat, lon, fetch("https://www.spc.noaa.gov/products/outlook/day2otlk_hail.nolyr.geojson"), radius)["label"])
+        base["wind"] = to_percent(analyze(lat, lon, fetch("https://www.spc.noaa.gov/products/outlook/day2otlk_wind.nolyr.geojson"), radius)["label"])
+
+        base.update(cat)
+        return base
+
+
+    # ---------------- DAY 3 ----------------
+    if DAY == "3":
+
+        cat = analyze(lat, lon, fetch("https://www.spc.noaa.gov/products/outlook/day3otlk_cat.nolyr.geojson"), radius)
+        any_r = analyze(lat, lon, fetch("https://www.spc.noaa.gov/products/outlook/day3otlk_prob.nolyr.geojson"), radius)
 
         base["category"] = RISK_MAP.get(cat["label"], "None")
         if base["category"] == "None":
@@ -217,10 +193,21 @@ def process_day(day, lat, lon, radius):
         base.update(cat)
         return base
 
-    # 4–8
-    r = analyze(lat, lon, SPC_BY_DAY[day], radius)
-    base["any"] = to_percent(r["label"])
-    base.update(r)
+
+    # ---------------- DAY 4–8 (FIXED) ----------------
+    if DAY in ["4", "5", "6", "7", "8"]:
+
+        url = f"https://www.spc.noaa.gov/products/exper/day4-8/day{DAY}prob.nolyr.geojson"
+        geo = fetch(url)
+
+        r = analyze(lat, lon, geo, radius)
+
+        base["any"] = to_percent(r["label"])
+        base.update(r)
+
+        return base
+
+
     return base
 
 
@@ -243,94 +230,65 @@ def main():
         ZoneInfo("America/New_York")
     ).strftime("%m/%d/%Y %H:%M")
 
-    # ---------------------------
-    # MODE SWITCH
-    # ---------------------------
+    for loc in locations:
 
-    if DAY_INPUT in ["4", "5", "6", "7", "8"]:
+        r = process_day(
+            float(loc["lat"]),
+            float(loc["lon"]),
+            float(loc["radius"])
+        )
 
-        load_spc_4_8()
+        row = [
+            timestamp,
+            loc["name"],
+            loc["wfo"],
+            OUTLOOK_TYPE,
+            OUTLOOK_SOURCE,
+            DAY,
+            ISSUE,
 
-        for d in range(4, 9):
-            for loc in locations:
+            "", "", "", "",
+            loc.get("region",""),
+            "", "",
 
-                r = process_day(str(d),
-                    float(loc["lat"]),
-                    float(loc["lon"]),
-                    float(loc["radius"])
-                )
+            "NEW",
 
-                row = build_row(timestamp, loc, r, d)
+            r["indicator"],
+            r["distance"],
+            r["direction"],
 
-                sheet.insert_row(row, 2, value_input_option="USER_ENTERED")
-                print(f"Inserted {loc['name']} Day {d}")
+            r["category"] if DAY == "1" else "",
+            r["tornado"] if DAY == "1" else "",
+            r["hail"] if DAY == "1" else "",
+            r["wind"] if DAY == "1" else "",
 
-    else:
+            r["category"] if DAY == "2" else "",
+            r["tornado"] if DAY == "2" else "",
+            r["hail"] if DAY == "2" else "",
+            r["wind"] if DAY == "2" else "",
 
-        load_spc_1_3(DAY_INPUT)
+            r["category"] if DAY == "3" else "",
+            r["any"] if DAY == "3" else "",
 
-        for loc in locations:
+            r["any"] if DAY == "4" else "",
+            r["any"] if DAY == "5" else "",
+            r["any"] if DAY == "6" else "",
+            r["any"] if DAY == "7" else "",
+            r["any"] if DAY == "8" else "",
+        ]
 
-            r = process_day(
-                DAY_INPUT,
-                float(loc["lat"]),
-                float(loc["lon"]),
-                float(loc["radius"])
-            )
+        sheet.insert_row(row, 2, value_input_option="USER_ENTERED")
 
-            row = build_row(timestamp, loc, r, DAY_INPUT)
-
-            sheet.insert_row(row, 2, value_input_option="USER_ENTERED")
-            print(f"Inserted {loc['name']}")
+        print(f"Inserted {loc['name']}")
 
     print("Done.")
 
 
 # ==================================================
-# ROW BUILDER
-# ==================================================
-
-def build_row(timestamp, loc, r, day):
-
-    return [
-        timestamp,
-        loc["name"],
-        loc["wfo"],
-        OUTLOOK_TYPE,
-        OUTLOOK_SOURCE,
-        day,
-        ISSUE,
-        "", "", "", "",
-        loc.get("region",""),
-        "", "",
-        "NEW",
-        r["indicator"],
-        r["distance"],
-        r["direction"],
-        r["category"] if day == "1" else "",
-        r["tornado"] if day == "1" else "",
-        r["hail"] if day == "1" else "",
-        r["wind"] if day == "1" else "",
-        r["category"] if day == "2" else "",
-        r["tornado"] if day == "2" else "",
-        r["hail"] if day == "2" else "",
-        r["wind"] if day == "2" else "",
-        r["category"] if day == "3" else "",
-        r["any"] if day == "3" else "",
-        r["any"] if day == "4" else "",
-        r["any"] if day == "5" else "",
-        r["any"] if day == "6" else "",
-        r["any"] if day == "7" else "",
-        r["any"] if day == "8" else "",
-    ]
-
-
-# ==================================================
-# WEBHOOK
+# RUN + WEBHOOK
 # ==================================================
 
 if __name__ == "__main__":
-
     main()
 
     script_id = os.environ.get("GOOGLE_SHEETS_WEBHOOK_API_URL_ID")
@@ -341,15 +299,24 @@ if __name__ == "__main__":
         if script_id else None
     )
 
-    if script_url and api_key:
+    if not script_url:
+        print("⚠️ Missing GOOGLE_SHEETS_WEBHOOK_API_URL_ID")
 
+    elif not api_key:
+        print("⚠️ Missing GOOGLE_SHEETS_WEBHOOK_API_KEY")
+
+    else:
         try:
-            r = requests.get(script_url, params={"key": api_key}, timeout=30)
+            response = requests.get(
+                script_url,
+                params={"key": api_key},
+                timeout=30
+            )
 
-            if r.status_code == 200:
+            if response.status_code == 200:
                 print("📡 Webhook triggered successfully.")
             else:
-                print(f"⚠️ Webhook failed: {r.status_code}")
+                print(f"⚠️ Webhook failed: {response.status_code}")
 
         except Exception as e:
             print(f"🚨 Webhook error: {e}")
