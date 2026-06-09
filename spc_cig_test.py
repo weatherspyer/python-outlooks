@@ -46,12 +46,6 @@ RISK_MAP = {
     "": "None"
 }
 
-CIG_MAP = {
-    "CIG1": "1",
-    "CIG2": "2",
-    "CIG3": "3"
-}
-
 
 # ==================================================
 # HELPERS
@@ -97,25 +91,23 @@ def direction(lat1, lon1, lat2, lon2):
 
 
 # ==================================================
-# CORE ANALYSIS (probability + geometry)
+# ANALYZE
 # ==================================================
 
-def analyze(lat, lon, geojson, radius):
+def analyze(lat, lon, geojson, radius, cig_mode=False):
 
     p = Point(lon, lat)
     search = p.buffer(radius / 69.0)
 
-    best_point = None
-    best_dn = -1
-
-    best_radius = {
+    best = {
         "label": "None",
+        "cig": "",
         "indicator": "None",
         "distance": "",
         "direction": ""
     }
 
-    radius_dn = -1
+    best_dn = -1
 
     for f in geojson.get("features", []):
 
@@ -123,85 +115,49 @@ def analyze(lat, lon, geojson, radius):
         if not geom or geom.get("type") == "GeometryCollection":
             continue
 
-        label = f.get("properties", {}).get("LABEL")
+        props = f.get("properties", {})
+
+        label = props.get("LABEL")
 
         if label == "TSTM":
             continue
 
         poly = shape(geom)
-        dn = f.get("properties", {}).get("DN", 0)
+        dn = props.get("DN", 0)
+
+        cig = props.get("LABEL") if cig_mode else ""
 
         # POINT
         if poly.contains(p):
             if dn > best_dn:
                 best_dn = dn
-                best_point = {
+                best = {
                     "label": label,
+                    "cig": cig,
                     "indicator": "Point",
                     "distance": "",
                     "direction": ""
                 }
 
         # RADIUS
-        if poly.intersects(search):
-            if dn > radius_dn:
-                radius_dn = dn
+        elif poly.intersects(search):
+            if dn > best_dn:
+                best_dn = dn
                 near = nearest_points(p, poly)[1]
 
-                best_radius = {
+                best = {
                     "label": label,
+                    "cig": cig,
                     "indicator": "Radius",
                     "distance": round(p.distance(near) * 69),
                     "direction": direction(lat, lon, near.y, near.x)
                 }
 
-    return best_point or best_radius
-
-
-# ==================================================
-# FIXED SIG LOGIC (OPTION A CORRECT VERSION)
-# ==================================================
-
-def get_sig(lat, lon, geojson, radius, hazard_key):
-
-    p = Point(lon, lat)
-    search = p.buffer(radius / 69.0)
-
-    best = None
-    best_dn = -1
-
-    for f in geojson.get("features", []):
-
-        geom = f.get("geometry")
-        if not geom:
-            continue
-
-        label = f.get("properties", {}).get("LABEL")
-
-        if not label:
-            continue
-
-        # 🔥 STRICT HAZARD MATCH (prevents cross contamination)
-        if hazard_key not in label.upper():
-            continue
-
-        if "CIG" not in label:
-            continue
-
-        poly = shape(geom)
-        dn = f.get("properties", {}).get("DN", 0)
-
-        if poly.intersects(search) or poly.contains(p):
-
-            if dn > best_dn:
-                best_dn = dn
-                best = label
-
     return best
 
 
 # ==================================================
-# LOAD SPC DATA
+# LOAD SPC
 # ==================================================
 
 SPC = {}
@@ -253,15 +209,10 @@ def load_days_4_8():
 # ==================================================
 
 def to_hazard(prob, cig):
-
     if prob == "None":
         return "None"
-
     if cig:
-        cig_num = CIG_MAP.get(cig, "")
-        if cig_num:
-            return f"{prob} (Cig {cig_num})"
-
+        return f"{prob} (CIG {cig})"
     return prob
 
 
@@ -282,9 +233,7 @@ def process_day(day, lat, lon, radius):
         "direction": ""
     }
 
-    # ----------------------
     # DAY 1
-    # ----------------------
     if day == "1":
 
         cat = analyze(lat, lon, SPC["cat"], radius)
@@ -297,9 +246,9 @@ def process_day(day, lat, lon, radius):
         hail = analyze(lat, lon, SPC["hail"], radius)
         wind = analyze(lat, lon, SPC["wind"], radius)
 
-        torn_sig = get_sig(lat, lon, SPC["torn_sig"], radius, "TORN")
-        hail_sig = get_sig(lat, lon, SPC["hail_sig"], radius, "HAIL")
-        wind_sig = get_sig(lat, lon, SPC["wind_sig"], radius, "WIND")
+        torn_sig = analyze(lat, lon, SPC["torn_sig"], radius, cig_mode=True).get("cig")
+        hail_sig = analyze(lat, lon, SPC["hail_sig"], radius, cig_mode=True).get("cig")
+        wind_sig = analyze(lat, lon, SPC["wind_sig"], radius, cig_mode=True).get("cig")
 
         base["tornado"] = to_hazard(to_percent(torn["label"]), torn_sig)
         base["hail"] = to_hazard(to_percent(hail["label"]), hail_sig)
@@ -308,9 +257,7 @@ def process_day(day, lat, lon, radius):
         base.update(cat)
         return base
 
-    # ----------------------
     # DAY 2
-    # ----------------------
     if day == "2":
 
         cat = analyze(lat, lon, SPC["cat"], radius)
@@ -323,9 +270,9 @@ def process_day(day, lat, lon, radius):
         hail = analyze(lat, lon, SPC["hail"], radius)
         wind = analyze(lat, lon, SPC["wind"], radius)
 
-        torn_sig = get_sig(lat, lon, SPC["torn_sig"], radius, "TORN")
-        hail_sig = get_sig(lat, lon, SPC["hail_sig"], radius, "HAIL")
-        wind_sig = get_sig(lat, lon, SPC["wind_sig"], radius, "WIND")
+        torn_sig = analyze(lat, lon, SPC["torn_sig"], radius, cig_mode=True).get("cig")
+        hail_sig = analyze(lat, lon, SPC["hail_sig"], radius, cig_mode=True).get("cig")
+        wind_sig = analyze(lat, lon, SPC["wind_sig"], radius, cig_mode=True).get("cig")
 
         base["tornado"] = to_hazard(to_percent(torn["label"]), torn_sig)
         base["hail"] = to_hazard(to_percent(hail["label"]), hail_sig)
@@ -334,14 +281,12 @@ def process_day(day, lat, lon, radius):
         base.update(cat)
         return base
 
-    # ----------------------
     # DAY 3
-    # ----------------------
     if day == "3":
 
         cat = analyze(lat, lon, SPC["cat"], radius)
         any_r = analyze(lat, lon, SPC["prob"], radius)
-        any_sig = get_sig(lat, lon, SPC["prob_sig"], radius, "CIG")
+        any_sig = analyze(lat, lon, SPC["prob_sig"], radius, cig_mode=True).get("cig")
 
         base["category"] = RISK_MAP.get(cat["label"], "None")
 
@@ -353,15 +298,12 @@ def process_day(day, lat, lon, radius):
         base.update(cat)
         return base
 
-    # ----------------------
-    # DAY 4-8
-    # ----------------------
+    # DAY 4–8
     if day in ["4", "5", "6", "7", "8"]:
 
         r = analyze(lat, lon, SPC[day], radius)
         base["any"] = to_percent(r["label"])
         base.update(r)
-
         return base
 
     return base
@@ -394,9 +336,7 @@ def main():
         "1HSLnDqg243qkgVJb7tpsnKLEDiaLFM0cCLwU5LQndsg"
     ).worksheet("Log")
 
-    timestamp = datetime.now(
-        ZoneInfo("America/New_York")
-    ).strftime("%m/%d/%Y %H:%M")
+    timestamp = datetime.now(ZoneInfo("America/New_York")).strftime("%m/%d/%Y %H:%M")
 
     for loc in locations:
 
@@ -417,38 +357,28 @@ def main():
                 OUTLOOK_SOURCE,
                 d,
                 ISSUE,
-
                 "", "", "", "",
-
                 loc.get("region", ""),
-
-                "",
-                "",
-
+                "", "",
                 "NEW",
-
                 r["indicator"],
                 r["distance"],
                 r["direction"],
-
                 r["category"] if d == "1" else "",
                 r["tornado"] if d == "1" else "",
                 r["hail"] if d == "1" else "",
                 r["wind"] if d == "1" else "",
-
                 r["category"] if d == "2" else "",
                 r["tornado"] if d == "2" else "",
                 r["hail"] if d == "2" else "",
                 r["wind"] if d == "2" else "",
-
                 r["category"] if d == "3" else "",
                 r["any"] if d == "3" else "",
-
-                r["any"] if d == "4"] else "",
-                r["any"] if d == "5"] else "",
-                r["any"] if d == "6"] else "",
-                r["any"] if d == "7"] else "",
-                r["any"] if d == "8"] else "",
+                r["any"] if d == "4" else "",
+                r["any"] if d == "5" else "",
+                r["any"] if d == "6" else "",
+                r["any"] if d == "7" else "",
+                r["any"] if d == "8" else "",
             ]
 
             sheet.insert_row(row, 2, value_input_option="USER_ENTERED")
@@ -464,24 +394,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-    script_id = os.environ.get("GOOGLE_SHEETS_WEBHOOK_API_URL_ID")
-    api_key = os.environ.get("GOOGLE_SHEETS_WEBHOOK_API_KEY")
-
-    script_url = (
-        f"https://script.google.com/macros/s/{script_id}/exec"
-        if script_id else None
-    )
-
-    if script_url and api_key:
-        try:
-            response = requests.get(
-                script_url,
-                params={"key": api_key},
-                timeout=30
-            )
-            print("📡 Webhook triggered" if response.status_code == 200 else "⚠️ Webhook failed")
-        except Exception as e:
-            print(f"🚨 Webhook error: {e}")
-    else:
-        print("⚠️ Missing webhook env vars")
