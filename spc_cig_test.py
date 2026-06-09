@@ -42,7 +42,7 @@ RISK_MAP = {
     "MDT": "Moderate",
     "HIGH": "High",
     "TSTM": "None",
-    "None": "None",
+    None: "None",
     "": "None"
 }
 
@@ -72,6 +72,7 @@ def direction(lat1, lon1, lat2, lon2):
     lat2 = math.radians(lat2)
 
     x = math.sin(dlon) * math.cos(lat2)
+
     y = (
         math.cos(lat1) * math.sin(lat2)
         - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
@@ -89,87 +90,96 @@ def direction(lat1, lon1, lat2, lon2):
     return dirs[round(bearing / 22.5) % 16]
 
 
-def to_hazard(prob, cig):
-    if prob == "None":
-        return "None"
-    
-    if cig and cig != "None":
-        formatted_cig = cig.replace("CIG", "CIG ").strip()
-        return f"{prob} ({formatted_cig})"
-        
-    return prob
-
-
 # ==================================================
-# ANALYZE (OVERHAULED PRIORITY LOGIC)
+# ANALYZE
 # ==================================================
 
-def analyze(lat, lon, geojson, radius, point_only=False):
+def analyze(lat, lon, geojson, radius):
     p = Point(lon, lat)
-    
-    best_point = None
-    best_point_dn = -1
+    search = p.buffer(radius / 69.0)
 
-    best_radius = None
-    best_radius_dn = -1
+    # -----------------------------------
+    # PASS 1
+    # INSIDE POLYGON
+    # -----------------------------------
+
+    point_best = None
+    point_dn = -1
 
     for f in geojson.get("features", []):
         geom = f.get("geometry")
         if not geom or geom.get("type") == "GeometryCollection":
             continue
 
-        props = f.get("properties", {})
-        label = props.get("LABEL")
+        label = f.get("properties", {}).get("LABEL")
 
+        # IGNORE GENERAL THUNDERSTORMS
         if label == "TSTM":
             continue
 
         poly = shape(geom)
-        dn = props.get("DN", 0)
+        dn = f.get("properties", {}).get("DN", 0)
 
-        # Tier 1: Strict containment check
         if poly.contains(p):
-            if dn > best_point_dn:
-                best_point_dn = dn
-                best_point = {
+            if dn > point_dn:
+                point_dn = dn
+                point_best = {
                     "label": label,
-                    "cig": label,
                     "indicator": "Point",
                     "distance": "",
                     "direction": ""
                 }
-        
-        # Tier 2: Proximity boundary intersection check (Skipped if point_only)
-        elif not point_only:
-            search = p.buffer(radius / 69.0)
-            if poly.intersects(search):
-                if dn > best_radius_dn:
-                    best_radius_dn = dn
-                    near = nearest_points(p, poly)[1]
-                    best_radius = {
-                        "label": label,
-                        "cig": label,
-                        "indicator": "Radius",
-                        "distance": round(p.distance(near) * 69),
-                        "direction": direction(lat, lon, near.y, near.x)
-                    }
 
-    # Absolute Resolution Rule: If a POINT match exists anywhere, it ALWAYS wins.
-    if best_point is not None:
-        return best_point
-        
-    # If no geometric containment exists, fall back safely to radius proximity
-    if best_radius is not None:
-        return best_radius
+    # IF INSIDE SOMETHING
+    # RETURN IT IMMEDIATELY
+    if point_best:
+        return point_best
 
-    # Base state if completely missing from data fields
-    return {
+    # -----------------------------------
+    # PASS 2
+    # RADIUS SEARCH
+    # -----------------------------------
+
+    radius_best = {
         "label": "None",
-        "cig": "",
         "indicator": "None",
         "distance": "",
         "direction": ""
     }
+
+    radius_dn = -1
+
+    for f in geojson.get("features", []):
+        geom = f.get("geometry")
+        if not geom or geom.get("type") == "GeometryCollection":
+            continue
+
+        label = f.get("properties", {}).get("LABEL")
+
+        # IGNORE GENERAL THUNDERSTORMS
+        if label == "TSTM":
+            continue
+
+        poly = shape(geom)
+        dn = f.get("properties", {}).get("DN", 0)
+
+        if poly.intersects(search):
+            if dn > radius_dn:
+                radius_dn = dn
+                near = nearest_points(p, poly)[1]
+                radius_best = {
+                    "label": label,
+                    "indicator": "Radius",
+                    "distance": round(p.distance(near) * 69),
+                    "direction": direction(
+                        lat,
+                        lon,
+                        near.y,
+                        near.x
+                    )
+                }
+
+    return radius_best
 
 
 # ==================================================
@@ -183,35 +193,49 @@ def load_standard_day():
     global SPC
 
     if DAY == "1":
-        SPC["cat"] = fetch("https://www.spc.noaa.gov/products/outlook/day1otlk_cat.nolyr.geojson")
-        SPC["torn"] = fetch("https://www.spc.noaa.gov/products/outlook/day1otlk_torn.nolyr.geojson")
-        SPC["hail"] = fetch("https://www.spc.noaa.gov/products/outlook/day1otlk_hail.nolyr.geojson")
-        SPC["wind"] = fetch("https://www.spc.noaa.gov/products/outlook/day1otlk_wind.nolyr.geojson")
-
-        SPC["torn_sig"] = fetch("https://www.spc.noaa.gov/products/outlook/day1otlk_cigtorn.nolyr.geojson")
-        SPC["hail_sig"] = fetch("https://www.spc.noaa.gov/products/outlook/day1otlk_cighail.nolyr.geojson")
-        SPC["wind_sig"] = fetch("https://www.spc.noaa.gov/products/outlook/day1otlk_cigwind.nolyr.geojson")
+        SPC["cat"] = fetch(
+            "https://www.spc.noaa.gov/products/outlook/day1otlk_cat.nolyr.geojson"
+        )
+        SPC["torn"] = fetch(
+            "https://www.spc.noaa.gov/products/outlook/day1otlk_torn.nolyr.geojson"
+        )
+        SPC["hail"] = fetch(
+            "https://www.spc.noaa.gov/products/outlook/day1otlk_hail.nolyr.geojson"
+        )
+        SPC["wind"] = fetch(
+            "https://www.spc.noaa.gov/products/outlook/day1otlk_wind.nolyr.geojson"
+        )
 
     elif DAY == "2":
-        SPC["cat"] = fetch("https://www.spc.noaa.gov/products/outlook/day2otlk_cat.nolyr.geojson")
-        SPC["torn"] = fetch("https://www.spc.noaa.gov/products/outlook/day2otlk_torn.nolyr.geojson")
-        SPC["hail"] = fetch("https://www.spc.noaa.gov/products/outlook/day2otlk_hail.nolyr.geojson")
-        SPC["wind"] = fetch("https://www.spc.noaa.gov/products/outlook/day2otlk_wind.nolyr.geojson")
-
-        SPC["torn_sig"] = fetch("https://www.spc.noaa.gov/products/outlook/day2otlk_cigtorn.nolyr.geojson")
-        SPC["hail_sig"] = fetch("https://www.spc.noaa.gov/products/outlook/day2otlk_cighail.nolyr.geojson")
-        SPC["wind_sig"] = fetch("https://www.spc.noaa.gov/products/outlook/day2otlk_cigwind.nolyr.geojson")
+        SPC["cat"] = fetch(
+            "https://www.spc.noaa.gov/products/outlook/day2otlk_cat.nolyr.geojson"
+        )
+        SPC["torn"] = fetch(
+            "https://www.spc.noaa.gov/products/outlook/day2otlk_torn.nolyr.geojson"
+        )
+        SPC["hail"] = fetch(
+            "https://www.spc.noaa.gov/products/outlook/day2otlk_hail.nolyr.geojson"
+        )
+        SPC["wind"] = fetch(
+            "https://www.spc.noaa.gov/products/outlook/day2otlk_wind.nolyr.geojson"
+        )
 
     elif DAY == "3":
-        SPC["cat"] = fetch("https://www.spc.noaa.gov/products/outlook/day3otlk_cat.nolyr.geojson")
-        SPC["prob"] = fetch("https://www.spc.noaa.gov/products/outlook/day3otlk_prob.nolyr.geojson")
-        SPC["prob_sig"] = fetch("https://www.spc.noaa.gov/products/outlook/day3otlk_cigprob.nolyr.geojson")
+        SPC["cat"] = fetch(
+            "https://www.spc.noaa.gov/products/outlook/day3otlk_cat.nolyr.geojson"
+        )
+        SPC["prob"] = fetch(
+            "https://www.spc.noaa.gov/products/outlook/day3otlk_prob.nolyr.geojson"
+        )
 
 
 def load_days_4_8():
     global SPC
+
     for d in ["4", "5", "6", "7", "8"]:
-        SPC[d] = fetch(f"https://www.spc.noaa.gov/products/exper/day4-8/day{d}prob.nolyr.geojson")
+        SPC[d] = fetch(
+            f"https://www.spc.noaa.gov/products/exper/day4-8/day{d}prob.nolyr.geojson"
+        )
 
 
 # ==================================================
@@ -230,46 +254,84 @@ def process_day(day, lat, lon, radius):
         "direction": ""
     }
 
-    # DAY 1 & DAY 2
-    if day in ["1", "2"]:
+    # --------------------------------------
+    # DAY 1
+    # --------------------------------------
+
+    if day == "1":
         cat = analyze(lat, lon, SPC["cat"], radius)
-        base["category"] = RISK_MAP.get(cat["label"], "None")
+        base["category"] = RISK_MAP.get(
+            cat["label"],
+            "None"
+        )
 
         if base["category"] == "None":
             return base
 
-        torn = analyze(lat, lon, SPC["torn"], radius)
-        hail = analyze(lat, lon, SPC["hail"], radius)
-        wind = analyze(lat, lon, SPC["wind"], radius)
-
-        torn_sig = analyze(lat, lon, SPC["torn_sig"], radius, point_only=True).get("label")
-        hail_sig = analyze(lat, lon, SPC["hail_sig"], radius, point_only=True).get("label")
-        wind_sig = analyze(lat, lon, SPC["wind_sig"], radius, point_only=True).get("label")
-
-        base["tornado"] = to_hazard(to_percent(torn["label"]), torn_sig)
-        base["hail"] = to_hazard(to_percent(hail["label"]), hail_sig)
-        base["wind"] = to_hazard(to_percent(wind["label"]), wind_sig)
+        base["tornado"] = to_percent(
+            analyze(lat, lon, SPC["torn"], radius)["label"]
+        )
+        base["hail"] = to_percent(
+            analyze(lat, lon, SPC["hail"], radius)["label"]
+        )
+        base["wind"] = to_percent(
+            analyze(lat, lon, SPC["wind"], radius)["label"]
+        )
 
         base.update(cat)
         return base
 
+    # --------------------------------------
+    # DAY 2
+    # --------------------------------------
+
+    if day == "2":
+        cat = analyze(lat, lon, SPC["cat"], radius)
+        base["category"] = RISK_MAP.get(
+            cat["label"],
+            "None"
+        )
+
+        if base["category"] == "None":
+            return base
+
+        base["tornado"] = to_percent(
+            analyze(lat, lon, SPC["torn"], radius)["label"]
+        )
+        base["hail"] = to_percent(
+            analyze(lat, lon, SPC["hail"], radius)["label"]
+        )
+        base["wind"] = to_percent(
+            analyze(lat, lon, SPC["wind"], radius)["label"]
+        )
+
+        base.update(cat)
+        return base
+
+    # --------------------------------------
     # DAY 3
+    # --------------------------------------
+
     if day == "3":
         cat = analyze(lat, lon, SPC["cat"], radius)
         any_r = analyze(lat, lon, SPC["prob"], radius)
-        any_sig = analyze(lat, lon, SPC["prob_sig"], radius, point_only=True).get("label")
 
-        base["category"] = RISK_MAP.get(cat["label"], "None")
+        base["category"] = RISK_MAP.get(
+            cat["label"],
+            "None"
+        )
 
         if base["category"] == "None":
             return base
 
-        base["any"] = to_hazard(to_percent(any_r["label"]), any_sig)
-
+        base["any"] = to_percent(any_r["label"])
         base.update(cat)
         return base
 
-    # DAY 4–8
+    # --------------------------------------
+    # DAY 4-8
+    # --------------------------------------
+
     if day in ["4", "5", "6", "7", "8"]:
         r = analyze(lat, lon, SPC[day], radius)
         base["any"] = to_percent(r["label"])
@@ -284,6 +346,10 @@ def process_day(day, lat, lon, radius):
 # ==================================================
 
 def main():
+    # --------------------------------------
+    # LOAD SPC FILES
+    # --------------------------------------
+
     if DAY in ["1", "2", "3"]:
         load_standard_day()
         days_to_run = [DAY]
@@ -294,18 +360,28 @@ def main():
         load_days_4_8()
         days_to_run = [DAY]
 
+    # --------------------------------------
+    # GOOGLE SHEET
+    # --------------------------------------
+
     sheet = gspread.authorize(
         Credentials.from_service_account_file(
             "credentials.json",
-            scopes=["https://www.googleapis.com/auth/spreadsheets"]
+            scopes=[
+                "https://www.googleapis.com/auth/spreadsheets"
+            ]
         )
     ).open_by_key(
         "1HSLnDqg243qkgVJb7tpsnKLEDiaLFM0cCLwU5LQndsg"
     ).worksheet("Log")
 
-    timestamp = datetime.now(ZoneInfo("America/New_York")).strftime("%m/%d/%Y %H:%M")
+    timestamp = datetime.now(
+        ZoneInfo("America/New_York")
+    ).strftime("%m/%d/%Y %H:%M")
 
-    rows_to_insert = []
+    # --------------------------------------
+    # PROCESS LOCATIONS
+    # --------------------------------------
 
     for loc in locations:
         for d in days_to_run:
@@ -326,34 +402,44 @@ def main():
                 ISSUE,
                 "", "", "", "",
                 loc.get("region", ""),
-                "", "",
+                "",
+                "",
                 "NEW",
                 r["indicator"],
                 r["distance"],
                 r["direction"],
+
+                # DAY 1
                 r["category"] if d == "1" else "",
                 r["tornado"] if d == "1" else "",
                 r["hail"] if d == "1" else "",
                 r["wind"] if d == "1" else "",
+
+                # DAY 2
                 r["category"] if d == "2" else "",
                 r["tornado"] if d == "2" else "",
                 r["hail"] if d == "2" else "",
                 r["wind"] if d == "2" else "",
+
+                # DAY 3
                 r["category"] if d == "3" else "",
                 r["any"] if d == "3" else "",
+
+                # DAY 4-8
                 r["any"] if d == "4" else "",
                 r["any"] if d == "5" else "",
                 r["any"] if d == "6" else "",
                 r["any"] if d == "7" else "",
                 r["any"] if d == "8" else "",
             ]
-            
-            rows_to_insert.append(row)
-            print(f"Prepared row data for {loc['name']} Day {d}")
 
-    if rows_to_insert:
-        sheet.insert_rows(rows_to_insert, row=2, value_input_option="USER_ENTERED")
-        print(f"Successfully processed and batch uploaded {len(rows_to_insert)} records.")
+            sheet.insert_row(
+                row,
+                2,
+                value_input_option="USER_ENTERED"
+            )
+
+            print(f"Inserted {loc['name']} Day {d}")
 
     print("Done.")
 
@@ -363,4 +449,52 @@ def main():
 # ==================================================
 
 if __name__ == "__main__":
+
     main()
+
+    # --------------------------------------
+    # WEBHOOK
+    # --------------------------------------
+
+    script_id = os.environ.get(
+        "GOOGLE_SHEETS_WEBHOOK_API_URL_ID"
+    )
+
+    api_key = os.environ.get(
+        "GOOGLE_SHEETS_WEBHOOK_API_KEY"
+    )
+
+    script_url = (
+        f"https://script.google.com/macros/s/{script_id}/exec"
+        if script_id else None
+    )
+
+    if not script_url:
+        print(
+            "⚠️ Missing GOOGLE_SHEETS_WEBHOOK_API_URL_ID"
+        )
+
+    elif not api_key:
+        print(
+            "⚠️ Missing GOOGLE_SHEETS_WEBHOOK_API_KEY"
+        )
+
+    else:
+        try:
+            response = requests.get(
+                script_url,
+                params={"key": api_key},
+                timeout=30
+            )
+
+            if response.status_code == 200:
+                print(
+                    "📡 Webhook triggered successfully."
+                )
+            else:
+                print(
+                    "⚠️ Webhook failed: " + str(response.status_code)
+                )
+
+        except Exception as e:
+            print("🚨 Webhook error: " + str(e))
