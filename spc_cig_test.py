@@ -94,7 +94,6 @@ def to_hazard(prob, cig):
         return "None"
     
     if cig and cig != "None":
-        # Formats "CIG1" into "CIG 1"
         formatted_cig = cig.replace("CIG", "CIG ").strip()
         return f"{prob} ({formatted_cig})"
         
@@ -102,22 +101,17 @@ def to_hazard(prob, cig):
 
 
 # ==================================================
-# ANALYZE
+# ANALYZE (OVERHAULED PRIORITY LOGIC)
 # ==================================================
 
 def analyze(lat, lon, geojson, radius, point_only=False):
     p = Point(lon, lat)
-    search = p.buffer(radius / 69.0)
+    
+    best_point = None
+    best_point_dn = -1
 
-    best = {
-        "label": "None",
-        "cig": "",
-        "indicator": "None",
-        "distance": "",
-        "direction": ""
-    }
-
-    best_dn = -1
+    best_radius = None
+    best_radius_dn = -1
 
     for f in geojson.get("features", []):
         geom = f.get("geometry")
@@ -133,33 +127,49 @@ def analyze(lat, lon, geojson, radius, point_only=False):
         poly = shape(geom)
         dn = props.get("DN", 0)
 
-        # POINT MATCH
+        # Tier 1: Strict containment check
         if poly.contains(p):
-            if dn > best_dn:
-                best_dn = dn
-                best = {
+            if dn > best_point_dn:
+                best_point_dn = dn
+                best_point = {
                     "label": label,
                     "cig": label,
                     "indicator": "Point",
                     "distance": "",
                     "direction": ""
                 }
+        
+        # Tier 2: Proximity boundary intersection check (Skipped if point_only)
+        elif not point_only:
+            search = p.buffer(radius / 69.0)
+            if poly.intersects(search):
+                if dn > best_radius_dn:
+                    best_radius_dn = dn
+                    near = nearest_points(p, poly)[1]
+                    best_radius = {
+                        "label": label,
+                        "cig": label,
+                        "indicator": "Radius",
+                        "distance": round(p.distance(near) * 69),
+                        "direction": direction(lat, lon, near.y, near.x)
+                    }
 
-        # RADIUS MATCH (Skipped if evaluating point_only layers like CIG)
-        elif not point_only and poly.intersects(search):
-            if dn > best_dn:
-                best_dn = dn
-                near = nearest_points(p, poly)[1]
+    # Absolute Resolution Rule: If a POINT match exists anywhere, it ALWAYS wins.
+    if best_point is not None:
+        return best_point
+        
+    # If no geometric containment exists, fall back safely to radius proximity
+    if best_radius is not None:
+        return best_radius
 
-                best = {
-                    "label": label,
-                    "cig": label,
-                    "indicator": "Radius",
-                    "distance": round(p.distance(near) * 69),
-                    "direction": direction(lat, lon, near.y, near.x)
-                }
-
-    return best
+    # Base state if completely missing from data fields
+    return {
+        "label": "None",
+        "cig": "",
+        "indicator": "None",
+        "distance": "",
+        "direction": ""
+    }
 
 
 # ==================================================
@@ -228,12 +238,10 @@ def process_day(day, lat, lon, radius):
         if base["category"] == "None":
             return base
 
-        # Regular threat layers (Radius allowed)
         torn = analyze(lat, lon, SPC["torn"], radius)
         hail = analyze(lat, lon, SPC["hail"], radius)
         wind = analyze(lat, lon, SPC["wind"], radius)
 
-        # CIG Hatch layers (Strictly containment point_only)
         torn_sig = analyze(lat, lon, SPC["torn_sig"], radius, point_only=True).get("label")
         hail_sig = analyze(lat, lon, SPC["hail_sig"], radius, point_only=True).get("label")
         wind_sig = analyze(lat, lon, SPC["wind_sig"], radius, point_only=True).get("label")
@@ -249,8 +257,6 @@ def process_day(day, lat, lon, radius):
     if day == "3":
         cat = analyze(lat, lon, SPC["cat"], radius)
         any_r = analyze(lat, lon, SPC["prob"], radius)
-        
-        # Day 3 CIG layers (Strictly containment point_only)
         any_sig = analyze(lat, lon, SPC["prob_sig"], radius, point_only=True).get("label")
 
         base["category"] = RISK_MAP.get(cat["label"], "None")
@@ -299,7 +305,6 @@ def main():
 
     timestamp = datetime.now(ZoneInfo("America/New_York")).strftime("%m/%d/%Y %H:%M")
 
-    # Array list to collect rows to perform a high-speed batch insert
     rows_to_insert = []
 
     for loc in locations:
@@ -346,7 +351,6 @@ def main():
             rows_to_insert.append(row)
             print(f"Prepared row data for {loc['name']} Day {d}")
 
-    # Write all metrics in a single API roundtrip to prevent 429 quota exhaustion errors
     if rows_to_insert:
         sheet.insert_rows(rows_to_insert, row=2, value_input_option="USER_ENTERED")
         print(f"Successfully processed and batch uploaded {len(rows_to_insert)} records.")
