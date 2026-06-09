@@ -42,7 +42,7 @@ RISK_MAP = {
     "MDT": "Moderate",
     "HIGH": "High",
     "TSTM": "None",
-    None: "None",
+    "None": "None",
     "": "None"
 }
 
@@ -66,7 +66,6 @@ def fetch(url):
 
 
 def direction(lat1, lon1, lat2, lon2):
-
     dlon = math.radians(lon2 - lon1)
 
     lat1 = math.radians(lat1)
@@ -90,12 +89,23 @@ def direction(lat1, lon1, lat2, lon2):
     return dirs[round(bearing / 22.5) % 16]
 
 
+def to_hazard(prob, cig):
+    if prob == "None":
+        return "None"
+    
+    if cig and cig != "None":
+        # Formats "CIG1" into "CIG 1"
+        formatted_cig = cig.replace("CIG", "CIG ").strip()
+        return f"{prob} ({formatted_cig})"
+        
+    return prob
+
+
 # ==================================================
 # ANALYZE
 # ==================================================
 
-def analyze(lat, lon, geojson, radius, cig_mode=False):
-
+def analyze(lat, lon, geojson, radius, point_only=False):
     p = Point(lon, lat)
     search = p.buffer(radius / 69.0)
 
@@ -110,13 +120,11 @@ def analyze(lat, lon, geojson, radius, cig_mode=False):
     best_dn = -1
 
     for f in geojson.get("features", []):
-
         geom = f.get("geometry")
         if not geom or geom.get("type") == "GeometryCollection":
             continue
 
         props = f.get("properties", {})
-
         label = props.get("LABEL")
 
         if label == "TSTM":
@@ -125,29 +133,27 @@ def analyze(lat, lon, geojson, radius, cig_mode=False):
         poly = shape(geom)
         dn = props.get("DN", 0)
 
-        cig = props.get("LABEL") if cig_mode else ""
-
-        # POINT
+        # POINT MATCH
         if poly.contains(p):
             if dn > best_dn:
                 best_dn = dn
                 best = {
                     "label": label,
-                    "cig": cig,
+                    "cig": label,
                     "indicator": "Point",
                     "distance": "",
                     "direction": ""
                 }
 
-        # RADIUS
-        elif poly.intersects(search):
+        # RADIUS MATCH (Skipped if evaluating point_only layers like CIG)
+        elif not point_only and poly.intersects(search):
             if dn > best_dn:
                 best_dn = dn
                 near = nearest_points(p, poly)[1]
 
                 best = {
                     "label": label,
-                    "cig": cig,
+                    "cig": label,
                     "indicator": "Radius",
                     "distance": round(p.distance(near) * 69),
                     "direction": direction(lat, lon, near.y, near.x)
@@ -164,11 +170,9 @@ SPC = {}
 
 
 def load_standard_day():
-
     global SPC
 
     if DAY == "1":
-
         SPC["cat"] = fetch("https://www.spc.noaa.gov/products/outlook/day1otlk_cat.nolyr.geojson")
         SPC["torn"] = fetch("https://www.spc.noaa.gov/products/outlook/day1otlk_torn.nolyr.geojson")
         SPC["hail"] = fetch("https://www.spc.noaa.gov/products/outlook/day1otlk_hail.nolyr.geojson")
@@ -179,7 +183,6 @@ def load_standard_day():
         SPC["wind_sig"] = fetch("https://www.spc.noaa.gov/products/outlook/day1otlk_cigwind.nolyr.geojson")
 
     elif DAY == "2":
-
         SPC["cat"] = fetch("https://www.spc.noaa.gov/products/outlook/day2otlk_cat.nolyr.geojson")
         SPC["torn"] = fetch("https://www.spc.noaa.gov/products/outlook/day2otlk_torn.nolyr.geojson")
         SPC["hail"] = fetch("https://www.spc.noaa.gov/products/outlook/day2otlk_hail.nolyr.geojson")
@@ -190,30 +193,15 @@ def load_standard_day():
         SPC["wind_sig"] = fetch("https://www.spc.noaa.gov/products/outlook/day2otlk_cigwind.nolyr.geojson")
 
     elif DAY == "3":
-
         SPC["cat"] = fetch("https://www.spc.noaa.gov/products/outlook/day3otlk_cat.nolyr.geojson")
         SPC["prob"] = fetch("https://www.spc.noaa.gov/products/outlook/day3otlk_prob.nolyr.geojson")
         SPC["prob_sig"] = fetch("https://www.spc.noaa.gov/products/outlook/day3otlk_cigprob.nolyr.geojson")
 
 
 def load_days_4_8():
-
     global SPC
-
     for d in ["4", "5", "6", "7", "8"]:
         SPC[d] = fetch(f"https://www.spc.noaa.gov/products/exper/day4-8/day{d}prob.nolyr.geojson")
-
-
-# ==================================================
-# FORMATTER
-# ==================================================
-
-def to_hazard(prob, cig):
-    if prob == "None":
-        return "None"
-    if cig:
-        return f"{prob} (CIG {cig})"
-    return prob
 
 
 # ==================================================
@@ -221,7 +209,6 @@ def to_hazard(prob, cig):
 # ==================================================
 
 def process_day(day, lat, lon, radius):
-
     base = {
         "category": "None",
         "tornado": "None",
@@ -233,46 +220,23 @@ def process_day(day, lat, lon, radius):
         "direction": ""
     }
 
-    # DAY 1
-    if day == "1":
-
+    # DAY 1 & DAY 2
+    if day in ["1", "2"]:
         cat = analyze(lat, lon, SPC["cat"], radius)
         base["category"] = RISK_MAP.get(cat["label"], "None")
 
         if base["category"] == "None":
             return base
 
+        # Regular threat layers (Radius allowed)
         torn = analyze(lat, lon, SPC["torn"], radius)
         hail = analyze(lat, lon, SPC["hail"], radius)
         wind = analyze(lat, lon, SPC["wind"], radius)
 
-        torn_sig = analyze(lat, lon, SPC["torn_sig"], radius, cig_mode=True).get("cig")
-        hail_sig = analyze(lat, lon, SPC["hail_sig"], radius, cig_mode=True).get("cig")
-        wind_sig = analyze(lat, lon, SPC["wind_sig"], radius, cig_mode=True).get("cig")
-
-        base["tornado"] = to_hazard(to_percent(torn["label"]), torn_sig)
-        base["hail"] = to_hazard(to_percent(hail["label"]), hail_sig)
-        base["wind"] = to_hazard(to_percent(wind["label"]), wind_sig)
-
-        base.update(cat)
-        return base
-
-    # DAY 2
-    if day == "2":
-
-        cat = analyze(lat, lon, SPC["cat"], radius)
-        base["category"] = RISK_MAP.get(cat["label"], "None")
-
-        if base["category"] == "None":
-            return base
-
-        torn = analyze(lat, lon, SPC["torn"], radius)
-        hail = analyze(lat, lon, SPC["hail"], radius)
-        wind = analyze(lat, lon, SPC["wind"], radius)
-
-        torn_sig = analyze(lat, lon, SPC["torn_sig"], radius, cig_mode=True).get("cig")
-        hail_sig = analyze(lat, lon, SPC["hail_sig"], radius, cig_mode=True).get("cig")
-        wind_sig = analyze(lat, lon, SPC["wind_sig"], radius, cig_mode=True).get("cig")
+        # CIG Hatch layers (Strictly containment point_only)
+        torn_sig = analyze(lat, lon, SPC["torn_sig"], radius, point_only=True).get("label")
+        hail_sig = analyze(lat, lon, SPC["hail_sig"], radius, point_only=True).get("label")
+        wind_sig = analyze(lat, lon, SPC["wind_sig"], radius, point_only=True).get("label")
 
         base["tornado"] = to_hazard(to_percent(torn["label"]), torn_sig)
         base["hail"] = to_hazard(to_percent(hail["label"]), hail_sig)
@@ -283,10 +247,11 @@ def process_day(day, lat, lon, radius):
 
     # DAY 3
     if day == "3":
-
         cat = analyze(lat, lon, SPC["cat"], radius)
         any_r = analyze(lat, lon, SPC["prob"], radius)
-        any_sig = analyze(lat, lon, SPC["prob_sig"], radius, cig_mode=True).get("cig")
+        
+        # Day 3 CIG layers (Strictly containment point_only)
+        any_sig = analyze(lat, lon, SPC["prob_sig"], radius, point_only=True).get("label")
 
         base["category"] = RISK_MAP.get(cat["label"], "None")
 
@@ -300,7 +265,6 @@ def process_day(day, lat, lon, radius):
 
     # DAY 4–8
     if day in ["4", "5", "6", "7", "8"]:
-
         r = analyze(lat, lon, SPC[day], radius)
         base["any"] = to_percent(r["label"])
         base.update(r)
@@ -314,15 +278,12 @@ def process_day(day, lat, lon, radius):
 # ==================================================
 
 def main():
-
     if DAY in ["1", "2", "3"]:
         load_standard_day()
         days_to_run = [DAY]
-
     elif DAY == "4":
         load_days_4_8()
         days_to_run = ["4", "5", "6", "7", "8"]
-
     else:
         load_days_4_8()
         days_to_run = [DAY]
@@ -338,10 +299,11 @@ def main():
 
     timestamp = datetime.now(ZoneInfo("America/New_York")).strftime("%m/%d/%Y %H:%M")
 
+    # Array list to collect rows to perform a high-speed batch insert
+    rows_to_insert = []
+
     for loc in locations:
-
         for d in days_to_run:
-
             r = process_day(
                 d,
                 float(loc["lat"]),
@@ -380,10 +342,14 @@ def main():
                 r["any"] if d == "7" else "",
                 r["any"] if d == "8" else "",
             ]
+            
+            rows_to_insert.append(row)
+            print(f"Prepared row data for {loc['name']} Day {d}")
 
-            sheet.insert_row(row, 2, value_input_option="USER_ENTERED")
-
-            print(f"Inserted {loc['name']} Day {d}")
+    # Write all metrics in a single API roundtrip to prevent 429 quota exhaustion errors
+    if rows_to_insert:
+        sheet.insert_rows(rows_to_insert, row=2, value_input_option="USER_ENTERED")
+        print(f"Successfully processed and batch uploaded {len(rows_to_insert)} records.")
 
     print("Done.")
 
