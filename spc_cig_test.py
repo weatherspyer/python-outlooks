@@ -72,6 +72,7 @@ def fetch(url):
 
 
 def direction(lat1, lon1, lat2, lon2):
+
     dlon = math.radians(lon2 - lon1)
 
     lat1 = math.radians(lat1)
@@ -96,7 +97,7 @@ def direction(lat1, lon1, lat2, lon2):
 
 
 # ==================================================
-# CORE GEOMETRY CHECK
+# CORE ANALYSIS (probability + geometry)
 # ==================================================
 
 def analyze(lat, lon, geojson, radius):
@@ -104,10 +105,10 @@ def analyze(lat, lon, geojson, radius):
     p = Point(lon, lat)
     search = p.buffer(radius / 69.0)
 
-    point_best = None
-    point_dn = -1
+    best_point = None
+    best_dn = -1
 
-    radius_best = {
+    best_radius = {
         "label": "None",
         "indicator": "None",
         "distance": "",
@@ -132,9 +133,9 @@ def analyze(lat, lon, geojson, radius):
 
         # POINT
         if poly.contains(p):
-            if dn > point_dn:
-                point_dn = dn
-                point_best = {
+            if dn > best_dn:
+                best_dn = dn
+                best_point = {
                     "label": label,
                     "indicator": "Point",
                     "distance": "",
@@ -147,21 +148,21 @@ def analyze(lat, lon, geojson, radius):
                 radius_dn = dn
                 near = nearest_points(p, poly)[1]
 
-                radius_best = {
+                best_radius = {
                     "label": label,
                     "indicator": "Radius",
                     "distance": round(p.distance(near) * 69),
                     "direction": direction(lat, lon, near.y, near.x)
                 }
 
-    return point_best or radius_best
+    return best_point or best_radius
 
 
 # ==================================================
-# SIG (CIG) CHECK - OPTION A FIX
+# FIXED SIG LOGIC (OPTION A CORRECT VERSION)
 # ==================================================
 
-def get_sig(lat, lon, geojson, radius):
+def get_sig(lat, lon, geojson, radius, hazard_key):
 
     p = Point(lon, lat)
     search = p.buffer(radius / 69.0)
@@ -177,7 +178,14 @@ def get_sig(lat, lon, geojson, radius):
 
         label = f.get("properties", {}).get("LABEL")
 
-        if not label or "CIG" not in label:
+        if not label:
+            continue
+
+        # 🔥 STRICT HAZARD MATCH (prevents cross contamination)
+        if hazard_key not in label.upper():
+            continue
+
+        if "CIG" not in label:
             continue
 
         poly = shape(geom)
@@ -193,7 +201,7 @@ def get_sig(lat, lon, geojson, radius):
 
 
 # ==================================================
-# LOAD SPC
+# LOAD SPC DATA
 # ==================================================
 
 SPC = {}
@@ -241,10 +249,11 @@ def load_days_4_8():
 
 
 # ==================================================
-# FORMAT
+# FORMATTER
 # ==================================================
 
 def to_hazard(prob, cig):
+
     if prob == "None":
         return "None"
 
@@ -288,9 +297,9 @@ def process_day(day, lat, lon, radius):
         hail = analyze(lat, lon, SPC["hail"], radius)
         wind = analyze(lat, lon, SPC["wind"], radius)
 
-        torn_sig = get_sig(lat, lon, SPC["torn_sig"], radius)
-        hail_sig = get_sig(lat, lon, SPC["hail_sig"], radius)
-        wind_sig = get_sig(lat, lon, SPC["wind_sig"], radius)
+        torn_sig = get_sig(lat, lon, SPC["torn_sig"], radius, "TORN")
+        hail_sig = get_sig(lat, lon, SPC["hail_sig"], radius, "HAIL")
+        wind_sig = get_sig(lat, lon, SPC["wind_sig"], radius, "WIND")
 
         base["tornado"] = to_hazard(to_percent(torn["label"]), torn_sig)
         base["hail"] = to_hazard(to_percent(hail["label"]), hail_sig)
@@ -314,9 +323,9 @@ def process_day(day, lat, lon, radius):
         hail = analyze(lat, lon, SPC["hail"], radius)
         wind = analyze(lat, lon, SPC["wind"], radius)
 
-        torn_sig = get_sig(lat, lon, SPC["torn_sig"], radius)
-        hail_sig = get_sig(lat, lon, SPC["hail_sig"], radius)
-        wind_sig = get_sig(lat, lon, SPC["wind_sig"], radius)
+        torn_sig = get_sig(lat, lon, SPC["torn_sig"], radius, "TORN")
+        hail_sig = get_sig(lat, lon, SPC["hail_sig"], radius, "HAIL")
+        wind_sig = get_sig(lat, lon, SPC["wind_sig"], radius, "WIND")
 
         base["tornado"] = to_hazard(to_percent(torn["label"]), torn_sig)
         base["hail"] = to_hazard(to_percent(hail["label"]), hail_sig)
@@ -332,7 +341,7 @@ def process_day(day, lat, lon, radius):
 
         cat = analyze(lat, lon, SPC["cat"], radius)
         any_r = analyze(lat, lon, SPC["prob"], radius)
-        any_sig = get_sig(lat, lon, SPC["prob_sig"], radius)
+        any_sig = get_sig(lat, lon, SPC["prob_sig"], radius, "CIG")
 
         base["category"] = RISK_MAP.get(cat["label"], "None")
 
@@ -435,11 +444,11 @@ def main():
                 r["category"] if d == "3" else "",
                 r["any"] if d == "3" else "",
 
-                r["any"] if d == "4" else "",
-                r["any"] if d == "5" else "",
-                r["any"] if d == "6" else "",
-                r["any"] if d == "7" else "",
-                r["any"] if d == "8" else "",
+                r["any"] if d == "4"] else "",
+                r["any"] if d == "5"] else "",
+                r["any"] if d == "6"] else "",
+                r["any"] if d == "7"] else "",
+                r["any"] if d == "8"] else "",
             ]
 
             sheet.insert_row(row, 2, value_input_option="USER_ENTERED")
