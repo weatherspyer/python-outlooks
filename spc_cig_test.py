@@ -227,7 +227,7 @@ def to_hazard(prob, cig):
     if prob == "None":
         return "None"
     if cig:
-        return f"{prob} (Cig {cig})"
+        return f"{prob} ({cig})"
     return prob
 
 
