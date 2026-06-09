@@ -126,7 +126,7 @@ def analyze(lat, lon, geojson, radius):
             continue
 
         label = f.get("properties", {}).get("LABEL")
-        cig = f.get("properties", {}).get("LABEL2")
+        cig = f.get("properties", {}).get("LABEL")
 
         if label == "TSTM":
             continue
