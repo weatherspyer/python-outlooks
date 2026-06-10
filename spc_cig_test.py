@@ -28,7 +28,7 @@ DAY = str(context.get("day", ""))
 
 OUTLOOK_TYPE = context.get("outlook_type", "")
 OUTLOOK_SOURCE = context.get("outlook_source", "")
-ISSUE = context.get("issue", "")
+ISSUE = str(context.get("issue", ""))
 
 
 # ==================================================
@@ -63,9 +63,13 @@ def to_percent(v):
 
 
 def fetch(url):
-    r = requests.get(url, timeout=30)
-    r.raise_for_status()
-    return r.json()
+    try:
+        r = requests.get(url, timeout=30)
+        r.raise_for_status()
+        return r.json()
+    except Exception as e:
+        print(f"⚠️ Fetch error for {url}: {e}")
+        return {"type": "FeatureCollection", "features": []}
 
 
 def direction(lat1, lon1, lat2, lon2):
@@ -206,8 +210,8 @@ def load_standard_day():
         # Adding CIG Layer
         SPC["prob_sig"] = fetch("https://www.spc.noaa.gov/products/outlook/day3otlk_cigprob.nolyr.geojson")
 
-    # Dynamic search loop to verify we successfully catch a VALID time string anywhere in the collection
-    if "cat" in SPC and "features" in SPC["cat"]:
+    # Scrape the VALID attribute specifically from the live dataset features
+    if "cat" in SPC and "features" in SPC["cat"] and SPC["cat"]["features"]:
         for feature in SPC["cat"]["features"]:
             possible_val = feature.get("properties", {}).get("VALID")
             if possible_val:
@@ -243,6 +247,7 @@ def process_day(day, lat, lon, radius):
         base["category"] = RISK_MAP.get(cat["label"], "None")
 
         if base["category"] == "None":
+            base.update(cat)
             return base
 
         torn = analyze(lat, lon, SPC["torn"], radius)
@@ -270,6 +275,7 @@ def process_day(day, lat, lon, radius):
         base["category"] = RISK_MAP.get(cat["label"], "None")
 
         if base["category"] == "None":
+            base.update(cat)
             return base
 
         base["any"] = to_hazard(to_percent(any_r["label"]), any_sig)
@@ -321,6 +327,7 @@ def main():
                 float(loc["radius"])
             )
 
+            # Build standard base row structure
             row = [
                 timestamp,
                 loc["name"],
@@ -359,14 +366,17 @@ def main():
                 r["any"] if d == "5" else "",
                 r["any"] if d == "6" else "",
                 r["any"] if d == "7" else "",
-                r["any"] if d == "8" else "",
-                
-                # Column AL (Forces evaluation directly to string tracking metric)
-                VALID_TIME
+                r["any"] if d == "8" else ""
             ]
 
+            # 1. Insert base fields into Row 2
             sheet.insert_row(row, 2, value_input_option="USER_ENTERED")
-            print(f"Inserted {loc['name']} Day {d}")
+            
+            # 2. Hard-target column AL on Row 2 specifically to update with the VALID string
+            if VALID_TIME:
+                sheet.update_acell("AL2", VALID_TIME)
+
+            print(f"Inserted {loc['name']} Day {d} | AL2 Target Force Valid Time: {VALID_TIME}")
 
     print("Done.")
 
