@@ -252,7 +252,7 @@ def process_day(day, lat, lon, radius):
 
         base["tornado"] = to_hazard(to_percent(torn["label"]), torn_sig)
         base["hail"] = to_hazard(to_percent(hail["label"]), hail_sig)
-        base["wind"] = to_hazard(to_percent(wind["label"], wind_sig))
+        base["wind"] = to_hazard(to_percent(wind["label"]), wind_sig)
 
         base.update(cat)
         return base
