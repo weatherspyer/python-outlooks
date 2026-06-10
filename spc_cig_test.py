@@ -46,6 +46,9 @@ RISK_MAP = {
     "": "None"
 }
 
+# Global tracker for the valid time property
+VALID_TIME = ""
+
 
 # ==================================================
 # HELPERS
@@ -173,7 +176,7 @@ SPC = {}
 
 
 def load_standard_day():
-    global SPC
+    global SPC, VALID_TIME
 
     if DAY == "1":
         SPC["cat"] = fetch("https://www.spc.noaa.gov/products/outlook/day1otlk_cat.nolyr.geojson")
@@ -202,6 +205,10 @@ def load_standard_day():
         SPC["prob"] = fetch("https://www.spc.noaa.gov/products/outlook/day3otlk_prob.nolyr.geojson")
         # Adding CIG Layer
         SPC["prob_sig"] = fetch("https://www.spc.noaa.gov/products/outlook/day3otlk_cigprob.nolyr.geojson")
+
+    # Safely pull the VALID timestamp out of the categorical features metadata
+    if SPC.get("cat", {}).get("features"):
+        VALID_TIME = SPC["cat"]["features"][0].get("properties", {}).get("VALID", "")
 
 
 def load_days_4_8():
@@ -245,7 +252,7 @@ def process_day(day, lat, lon, radius):
 
         base["tornado"] = to_hazard(to_percent(torn["label"]), torn_sig)
         base["hail"] = to_hazard(to_percent(hail["label"]), hail_sig)
-        base["wind"] = to_hazard(to_percent(wind["label"]), wind_sig)
+        base["wind"] = to_hazard(to_percent(wind["label"], wind_sig))
 
         base.update(cat)
         return base
@@ -349,6 +356,9 @@ def main():
                 r["any"] if d == "6" else "",
                 r["any"] if d == "7" else "",
                 r["any"] if d == "8" else "",
+                
+                # Column AL (38th element in the row array)
+                VALID_TIME if d in ["1", "2", "3"] else ""
             ]
 
             sheet.insert_row(row, 2, value_input_option="USER_ENTERED")
