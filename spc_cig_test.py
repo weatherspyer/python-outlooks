@@ -206,9 +206,13 @@ def load_standard_day():
         # Adding CIG Layer
         SPC["prob_sig"] = fetch("https://www.spc.noaa.gov/products/outlook/day3otlk_cigprob.nolyr.geojson")
 
-    # Safely pull the VALID timestamp out of the categorical features metadata
-    if SPC.get("cat", {}).get("features"):
-        VALID_TIME = SPC["cat"]["features"][0].get("properties", {}).get("VALID", "")
+    # Dynamic search loop to verify we successfully catch a VALID time string anywhere in the collection
+    if "cat" in SPC and "features" in SPC["cat"]:
+        for feature in SPC["cat"]["features"]:
+            possible_val = feature.get("properties", {}).get("VALID")
+            if possible_val:
+                VALID_TIME = str(possible_val)
+                break
 
 
 def load_days_4_8():
@@ -357,8 +361,8 @@ def main():
                 r["any"] if d == "7" else "",
                 r["any"] if d == "8" else "",
                 
-                # Column AL (38th element in the row array)
-                VALID_TIME if d in ["1", "2", "3"] else ""
+                # Column AL (Forces evaluation directly to string tracking metric)
+                VALID_TIME
             ]
 
             sheet.insert_row(row, 2, value_input_option="USER_ENTERED")
