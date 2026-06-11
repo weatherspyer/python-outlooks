@@ -318,6 +318,13 @@ def main():
 
     timestamp = datetime.now(ZoneInfo("America/New_York")).strftime("%m/%d/%Y %H:%M")
 
+    # Safe parsing of ISSUE details for rule processing
+    ref_date = ISSUE[:8] if len(ISSUE) >= 8 else datetime.now(ZoneInfo("UTC")).strftime("%Y%m%d")
+    year = ref_date[:4]
+
+    # Parse Issue Hour (HHMM) out of payload string
+    issue_hour = int(ISSUE[8:12]) if len(ISSUE) >= 12 else 0
+
     for loc in locations:
         for d in days_to_run:
             r = process_day(
@@ -372,11 +379,33 @@ def main():
             # 1. Insert base fields into Row 2
             sheet.insert_row(row, 2, value_input_option="USER_ENTERED")
             
-            # 2. Hard-target column AL on Row 2 specifically to update with the VALID string
+            # 2. Construct Custom Archive Links
+            archive_url = ""
+            
+            if d == "1":
+                if VALID_TIME and len(VALID_TIME) >= 4:
+                    archive_url = f"https://www.spc.noaa.gov/products/outlook/archive/{VALID_TIME[:4]}/day1otlk_{VALID_TIME}.html"
+            
+            elif d == "2":
+                # Morning run vs Evening run mapping logic
+                run_hour = "0600" if issue_hour < 1200 else "1730"
+                archive_url = f"https://www.spc.noaa.gov/products/outlook/archive/{year}/day2otlk_{ref_date}_{run_hour}.html"
+            
+            elif d == "3":
+                # Day 3: Morning run is 0730, Evening run is 1930
+                run_hour = "0730" if issue_hour < 1200 else "1930"
+                archive_url = f"https://www.spc.noaa.gov/products/outlook/archive/{year}/day3otlk_{ref_date}_{run_hour}.html"
+            
+            elif d in ["4", "5", "6", "7", "8"]:
+                archive_url = f"https://www.spc.noaa.gov/products/exper/day4-8/archive/{year}/day4-8_{ref_date}.html"
+
+            # 3. Target Injections into AL2 and AM2
             if VALID_TIME:
                 sheet.update_acell("AL2", VALID_TIME)
+            if archive_url:
+                sheet.update_acell("AM2", archive_url)
 
-            print(f"Inserted {loc['name']} Day {d} | AL2 Target Force Valid Time: {VALID_TIME}")
+            print(f"Inserted {loc['name']} Day {d} | AL2: {VALID_TIME} | AM2: {archive_url}")
 
     print("Done.")
 
