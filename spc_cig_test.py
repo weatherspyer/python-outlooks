@@ -6,6 +6,7 @@ import math
 import requests
 import gspread
 import os
+import time  # <-- NEW: Needed for generating our Batch Timestamp ID
 
 from shapely.geometry import shape, Point
 from shapely.ops import nearest_points
@@ -29,6 +30,12 @@ DAY = str(context.get("day", ""))
 OUTLOOK_TYPE = context.get("outlook_type", "")
 OUTLOOK_SOURCE = context.get("outlook_source", "")
 ISSUE = str(context.get("issue", ""))
+
+# --------------------------------------------------
+# GENERATE UNIQUE BATCH ID FOR THIS ENTIRE RUN
+# --------------------------------------------------
+BATCH_ID = f"BATCH_{int(time.time())}"
+# --------------------------------------------------
 
 
 # ==================================================
@@ -335,6 +342,7 @@ def main():
             )
 
             # Build standard base row structure
+            # Columns A - AN (Indices 0 - 39)
             row = [
                 timestamp,
                 loc["name"],
@@ -343,38 +351,47 @@ def main():
                 OUTLOOK_SOURCE,
                 d,
                 ISSUE,
-                "", "", "", "",
+                "", "", "", "",  # H, I, J, K will hold formulas
                 loc.get("region", ""),
-                "",
-                "",
-                "NEW",
-                r["indicator"],
-                r["distance"],
-                r["direction"],
+                "",              # M will hold formula
+                "",              # N will hold formula
+                "NEW",           # Column O (Index 14)
+                r["indicator"],  # Column P
+                r["distance"],   # Column Q
+                r["direction"],  # Column R
 
-                # DAY 1
+                # DAY 1 (Columns S - V)
                 r["category"] if d == "1" else "",
                 r["tornado"] if d == "1" else "",
                 r["hail"] if d == "1" else "",
                 r["wind"] if d == "1" else "",
 
-                # DAY 2
+                # DAY 2 (Columns W - Z)
                 r["category"] if d == "2" else "",
                 r["tornado"] if d == "2" else "",
                 r["hail"] if d == "2" else "",
                 r["wind"] if d == "2" else "",
 
-                # DAY 3
+                # DAY 3 (Columns AA - AB)
                 r["category"] if d == "3" else "",
                 r["any"] if d == "3" else "",
 
-                # DAY 4-8
+                # DAY 4-8 (Columns AC - AG)
                 r["any"] if d == "4" else "",
                 r["any"] if d == "5" else "",
                 r["any"] if d == "6" else "",
                 r["any"] if d == "7" else "",
-                r["any"] if d == "8" else ""
+                r["any"] if d == "8" else "",
+                
+                # Columns AH - AN (Indices 33 - 39)
+                "", "", "", "", "", "", "" 
             ]
+
+            # --------------------------------------------------
+            # ADJUSTMENT: Append the Batch ID to Column AO (Index 40)
+            # --------------------------------------------------
+            row.append(BATCH_ID)
+            # --------------------------------------------------
 
             # 1. Insert base fields into Row 2
             sheet.insert_row(row, 2, value_input_option="USER_ENTERED")
@@ -384,20 +401,16 @@ def main():
             
             if d == "1":
                 if VALID_TIME and len(VALID_TIME) >= 12:
-                    # Splits '202606131300' into '20260613' and '1300' and adds the underscore
                     formatted_time = f"{VALID_TIME[:8]}_{VALID_TIME[8:]}"
                     archive_url = f"https://www.spc.noaa.gov/products/outlook/archive/{VALID_TIME[:4]}/day1otlk_{formatted_time}.html"
                 elif VALID_TIME and len(VALID_TIME) >= 4:
-                    # Fallback just in case the string is shorter than expected
                     archive_url = f"https://www.spc.noaa.gov/products/outlook/archive/{VALID_TIME[:4]}/day1otlk_{VALID_TIME}.html"
             
             elif d == "2":
-                # Morning run vs Evening run mapping logic
                 run_hour = "0600" if issue_hour < 1200 else "1730"
                 archive_url = f"https://www.spc.noaa.gov/products/outlook/archive/{year}/day2otlk_{ref_date}_{run_hour}.html"
             
             elif d == "3":
-                # Day 3: Morning run is 0730, Evening run is 1930
                 run_hour = "0730" if issue_hour < 1200 else "1930"
                 archive_url = f"https://www.spc.noaa.gov/products/outlook/archive/{year}/day3otlk_{ref_date}_{run_hour}.html"
             
@@ -410,7 +423,7 @@ def main():
             if archive_url:
                 sheet.update_acell("AM2", archive_url)
 
-            print(f"Inserted {loc['name']} Day {d} | AL2: {VALID_TIME} | AM2: {archive_url}")
+            print(f"Inserted {loc['name']} Day {d} | AL2: {VALID_TIME} | AM2: {archive_url} | Batch ID: {BATCH_ID}")
 
     print("Done.")
 
@@ -424,7 +437,7 @@ if __name__ == "__main__":
     main()
 
     # --------------------------------------
-    # WEBHOOK
+    # WEBHOOK (UPDATED TO PASS BATCH PARAMETER)
     # --------------------------------------
 
     script_id = os.environ.get("GOOGLE_SHEETS_WEBHOOK_API_URL_ID")
@@ -441,14 +454,23 @@ if __name__ == "__main__":
         print("⚠️ Missing GOOGLE_SHEETS_WEBHOOK_API_KEY")
     else:
         try:
+            # --------------------------------------------------
+            # ADJUSTMENT: Adding targetBatchId parameter to GET request
+            # --------------------------------------------------
+            request_params = {
+                "key": api_key,
+                "targetBatchId": BATCH_ID
+            }
+            
             response = requests.get(
                 script_url,
-                params={"key": api_key},
+                params=request_params,
                 timeout=30
             )
+            # --------------------------------------------------
 
             if response.status_code == 200:
-                print("📡 Webhook triggered successfully.")
+                print(f"📡 Webhook triggered successfully for batch: {BATCH_ID}")
             else:
                 print(f"⚠️ Webhook failed: {response.status_code}")
 
