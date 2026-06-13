@@ -34,7 +34,7 @@ ISSUE = str(context.get("issue", ""))
 # --------------------------------------------------
 # GENERATE UNIQUE BATCH ID FOR THIS ENTIRE RUN
 # --------------------------------------------------
-BATCH_ID = f"BATCH_{int(time.time())}"
+BATCH_ID = f"BATCH_{int(time.time() * 1000)}"
 # --------------------------------------------------
 
 
