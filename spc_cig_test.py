@@ -383,7 +383,12 @@ def main():
             archive_url = ""
             
             if d == "1":
-                if VALID_TIME and len(VALID_TIME) >= 4:
+                if VALID_TIME and len(VALID_TIME) >= 12:
+                    # Splits '202606131300' into '20260613' and '1300' and adds the underscore
+                    formatted_time = f"{VALID_TIME[:8]}_{VALID_TIME[8:]}"
+                    archive_url = f"https://www.spc.noaa.gov/products/outlook/archive/{VALID_TIME[:4]}/day1otlk_{formatted_time}.html"
+                elif VALID_TIME and len(VALID_TIME) >= 4:
+                    # Fallback just in case the string is shorter than expected
                     archive_url = f"https://www.spc.noaa.gov/products/outlook/archive/{VALID_TIME[:4]}/day1otlk_{VALID_TIME}.html"
             
             elif d == "2":
