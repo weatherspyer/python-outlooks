@@ -465,7 +465,7 @@ if __name__ == "__main__":
             response = requests.get(
                 script_url,
                 params=request_params,
-                timeout=120
+                timeout=180
             )
             # --------------------------------------------------
 
