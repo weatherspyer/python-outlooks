@@ -51,6 +51,7 @@ RISK_MAP = {
 # Global trackers for properties pulled from the GeoJSON
 VALID_TIME = ""
 GEOJSON_ISSUE_TIME = ""
+TARGET_SHEET_NAME = ""  # Global tracker initialized for webhook visibility
 
 # --------------------------------------------------
 # FIXED ARCHIVE DASHBOARD URL FOR COLUMN AM
@@ -150,12 +151,14 @@ def load_wpc_day():
 # ==================================================
 
 def main():
+    global TARGET_SHEET_NAME
+
     wpc_geojson = load_wpc_day()
     days_to_run = [DAY]
 
     # Dynamically build the sheet name (e.g., "Rainfall Day4 Log")
-    target_sheet_name = f"Rainfall Day{DAY} Log"
-    print(f"Targeting Google Sheet Worksheet: {target_sheet_name}")
+    TARGET_SHEET_NAME = f"Rainfall Day{DAY} Log"
+    print(f"Targeting Google Sheet Worksheet: {TARGET_SHEET_NAME}")
 
     sheet = gspread.authorize(
         Credentials.from_service_account_file(
@@ -164,7 +167,7 @@ def main():
         )
     ).open_by_key(
         "1HSLnDqg243qkgVJb7tpsnKLEDiaLFM0cCLwU5LQndsg"
-    ).worksheet(target_sheet_name) # <-- Changed from "Log" to the dynamic variable
+    ).worksheet(TARGET_SHEET_NAME)
 
     timestamp = datetime.now(ZoneInfo("America/New_York")).strftime("%m/%d/%Y %H:%M")
 
@@ -223,10 +226,10 @@ def main():
             all_rows_to_insert.append(row)
             print(f"Prepared row: {loc['name']} WPC Day {d} | AL: {VALID_TIME} | AM: {ARCHIVE_URL}")
 
-    # 1. Batch insert all rows starting at Row 2 in a single API call
+    # Batch insert all rows starting at Row 2 in a single API call
     if all_rows_to_insert:
         sheet.insert_rows(all_rows_to_insert, 2, value_input_option="USER_ENTERED")
-        print(f"Successfully batch-inserted {len(all_rows_to_insert)} rows into '{target_sheet_name}'. Batch ID: {BATCH_ID}")
+        print(f"Successfully batch-inserted {len(all_rows_to_insert)} rows into '{TARGET_SHEET_NAME}'. Batch ID: {BATCH_ID}")
     else:
         print("No data collected to insert.")
 
@@ -234,15 +237,12 @@ def main():
 
 
 # ==================================================
-# WEBHOOK DISPATCH TRIGGER (DISABLED FOR NOW)
+# WEBHOOK DISPATCH TRIGGER
 # ==================================================
 
 if __name__ == "__main__":
     main()
 
-    print("ℹ️ Webhook dispatch skipped because it is currently commented out.")
-
-    """  # <-- Starts the comment block
     script_id = os.environ.get("GOOGLE_SHEETS_WEBHOOK_API_URL_ID")
     api_key = os.environ.get("GOOGLE_SHEETS_WEBHOOK_API_KEY")
 
@@ -257,11 +257,14 @@ if __name__ == "__main__":
         print("⚠️ Missing GOOGLE_SHEETS_WEBHOOK_API_KEY")
     else:
         try:
+            # Combined parameter dictionary tracking both Batch ID and Target Log sheet 
             request_params = {
                 "key": api_key,
-                "targetBatchId": BATCH_ID
+                "targetBatchId": BATCH_ID,
+                "targetSheet": TARGET_SHEET_NAME
             }
             
+            print(f"📡 Dispatching webhook call for batch {BATCH_ID} target sheet: {TARGET_SHEET_NAME}...")
             response = requests.get(
                 script_url,
                 params=request_params,
@@ -276,4 +279,3 @@ if __name__ == "__main__":
 
         except Exception as e:
             print(f"🚨 Webhook error: {e}")
-    """  # <-- Ends the comment block
