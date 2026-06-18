@@ -317,7 +317,7 @@ def main():
         load_days_4_8()
         days_to_run = [DAY]
 
-    # Dynamically track global configuration sheet name target
+    # Dynamically track global configuration sheet name target (e.g. "Conv Day1 Log" or "Conv Day4 Log")
     TARGET_SHEET_NAME = f"Conv Day{DAY} Log"
     print(f"Targeting Google Sheet Worksheet: {TARGET_SHEET_NAME}")
 
@@ -338,8 +338,8 @@ def main():
     # Parse Issue Hour (HHMM) out of payload string
     issue_hour = int(ISSUE[8:12]) if len(ISSUE) >= 12 else 0
 
-    # Store all tracking lines across all worksheets for consolidated submission
-    rows_by_sheet = {}
+    # Store all row arrays together for unified insertion
+    all_rows_to_insert = []
 
     for loc in locations:
         for d in days_to_run:
@@ -417,23 +417,20 @@ def main():
 
             # Append the Batch ID tracking token to Column AO (Index 40)
             row.append(BATCH_ID)
-
-            # Determine execution worksheet routing targets (Accounts for automated Day 4 loops tracking multi-sheet drops)
-            active_sheet_name = f"Conv Day{d} Log" if DAY == "4" else TARGET_SHEET_NAME
-            if active_sheet_name not in rows_by_sheet:
-                rows_by_sheet[active_sheet_name] = []
             
-            rows_by_sheet[active_sheet_name].append(row)
-            print(f"Prepared Row: {loc['name']} Day {d} | Target: {active_sheet_name} | Batch: {BATCH_ID}")
+            all_rows_to_insert.append(row)
+            print(f"Prepared Row: {loc['name']} Day {d} | Target: {TARGET_SHEET_NAME} | Batch: {BATCH_ID}")
 
-    # Single-instance unified batch insertions across mapped log worksheets
-    for sheet_name, rows in rows_by_sheet.items():
+    # Unified batch insertion into the single target worksheet
+    if all_rows_to_insert:
         try:
-            target_sheet = spreadsheet.worksheet(sheet_name)
-            target_sheet.insert_rows(rows, 2, value_input_option="USER_ENTERED")
-            print(f"Successfully batch-inserted {len(rows)} rows into worksheet: '{sheet_name}'")
+            target_sheet = spreadsheet.worksheet(TARGET_SHEET_NAME)
+            target_sheet.insert_rows(all_rows_to_insert, 2, value_input_option="USER_ENTERED")
+            print(f"Successfully batch-inserted {len(all_rows_to_insert)} rows into unified worksheet: '{TARGET_SHEET_NAME}'")
         except Exception as e:
-            print(f"🚨 Failed tracking worksheet data load insertion for target: {sheet_name}. Error: {e}")
+            print(f"🚨 Failed tracking worksheet data load insertion for target: {TARGET_SHEET_NAME}. Error: {e}")
+    else:
+        print("No rows prepared to insert.")
 
     print("Done.")
 
@@ -463,7 +460,6 @@ if __name__ == "__main__":
         print("⚠️ Missing GOOGLE_SHEETS_WEBHOOK_API_KEY")
     else:
         try:
-            # Added "targetSheet" tracking parameter mapping back to dynamic worksheet structures
             request_params = {
                 "key": api_key,
                 "targetBatchId": BATCH_ID,
