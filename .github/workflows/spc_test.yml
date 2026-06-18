@@ -1,4 +1,4 @@
-name: Run SPC Test
+name: Run SPC Outlook Check
 
 on:
   workflow_dispatch:
