@@ -1,4 +1,4 @@
-name: Run WPC Rainfall Test NEW
+name: Run WPC Rainfall Check
 
 on:
   workflow_dispatch:
